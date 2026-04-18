@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportHeight="108"
+    android:viewportWidth="108">
+
+    <!-- Stylized W (White) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M15,30 L35,85 L54,55 L73,85 L93,30 L82,30 L73,65 L54,35 L35,65 L26,30 Z" />
+
+    <!-- Stylized T (Yellow) - Integrated/Overlapping -->
+    <path
+        android:fillColor="#FACC15"
+        android:pathData="M38,35 L85,35 L85,45 L67,45 L67,85 L57,85 L57,45 L38,45 Z" />
+
+</vector>
