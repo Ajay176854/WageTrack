@@ -1,0 +1,4564 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>WageTrack</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <script type="text/javascript">
+    (function () {
+      // Cloud Configuration
+      window.SMTP_CONFIG = {
+        gasUrl: "https://script.google.com/macros/s/AKfycbxdmSIffVJk4YKPPd_oJ-ydfneBBh443Cmw4VJU1jyF_jcFxupMG18Up5rPKr1HzB7kYQ/exec",
+        target: "aajay1118@gmail.com"
+      };
+    })();
+
+    async function sendCloudEmail({ subject, body, filename, base64Data, jsonContent }) {
+      try {
+        if (window.showToast) showToast('Sending to Cloud Relay...');
+
+        const attachments = [];
+        if (filename && base64Data) {
+          attachments.push({ name: filename, data: base64Data, type: 'application/pdf' });
+        }
+        if (jsonContent) {
+          const jsonStr = JSON.stringify(jsonContent, null, 2);
+          const jsonBase64 = btoa(unescape(encodeURIComponent(jsonStr)));
+          attachments.push({ name: `WageTrack_Backup_${new Date().getTime()}.json`, data: jsonBase64, type: 'application/json' });
+        }
+
+        const payload = {
+          to: SMTP_CONFIG.target,
+          subject: subject || "WageTrack Cloud Update",
+          body: body || "Please find the attached WageTrack report.",
+          attachments: attachments
+        };
+
+        const response = await fetch(SMTP_CONFIG.gasUrl, {
+          method: 'POST',
+          mode: 'no-cors', // Essential for GAS redirects on Android
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload)
+        });
+
+        // In no-cors mode, response is opaque, but sending is usually successful
+        if (window.showToast) showToast('✓ Request Sent to Cloud');
+        return true;
+
+      } catch (e) {
+        console.error('Relay Error:', e);
+        if (window.showToast) showToast('Cloud Error: ' + e.message);
+        return false;
+      }
+    }
+  </script>
+  <!-- Capacitor Plugins -->
+  <!-- <script src="capacitor.js"></script> -->
+  <!-- PDF.js for in-app rendering (Android WebView cannot show PDFs in iframes) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    // ── IN-APP PDF VIEWER ─────────────────────────────────────────────────────
+    let _currentPdfBlob = null;
+    let _currentPdfFilename = 'WageTrack_Report.pdf';
+
+    function saveAndSharePDF(doc, filename) {
+      try {
+        const pdfBlob = doc.output('blob');
+        _currentPdfFilename = filename || 'WageTrack_Report.pdf';
+        _currentPdfBlob = pdfBlob;
+        openPDFViewer(pdfBlob, _currentPdfFilename);
+      } catch (e) {
+        console.error('PDF Error:', e);
+        if (window.showToast) showToast('PDF Error: ' + e.message);
+      }
+    }
+
+    async function openPDFViewer(pdfBlob, filename) {
+      const overlay = document.getElementById('pdf-viewer-overlay');
+      const container = document.getElementById('pdf-canvas-container');
+      const title = document.getElementById('pdf-viewer-title');
+      const loading = document.getElementById('pdf-loading');
+
+      title.textContent = filename;
+      container.innerHTML = '';
+      loading.style.display = 'flex';
+      overlay.style.display = 'flex';
+
+      try {
+        // Set PDF.js worker
+        if (window.pdfjsLib) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+          const arrayBuffer = await pdfBlob.arrayBuffer();
+          const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+          for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+            const page = await pdfDoc.getPage(pageNum);
+            const viewport = page.getViewport({ scale: window.devicePixelRatio || 2 });
+
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            canvas.style.width = '100%';
+            canvas.style.display = 'block';
+            canvas.style.marginBottom = '8px';
+            canvas.style.background = '#fff';
+            container.appendChild(canvas);
+
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+          }
+        } else {
+          container.innerHTML = '<p style="color:#fff;padding:20px;text-align:center;">PDF.js failed to load. Please check your internet connection.</p>';
+        }
+      } catch (err) {
+        console.error('PDF.js render error:', err);
+        container.innerHTML = '<p style="color:#f85149;padding:20px;text-align:center;">Could not render PDF: ' + err.message + '</p>';
+      } finally {
+        loading.style.display = 'none';
+      }
+    }
+
+    function closePDFViewer() {
+      document.getElementById('pdf-viewer-overlay').style.display = 'none';
+      document.getElementById('pdf-canvas-container').innerHTML = '';
+    }
+
+    async function downloadPDF() {
+      if (!_currentPdfBlob) {
+        if (window.showToast) showToast('Error: No report data found');
+        return;
+      }
+
+      try {
+        if (window.showToast) showToast('Saving report...');
+
+        // Convert blob to base64
+        const reader = new FileReader();
+        const base64Data = await new Promise((resolve, reject) => {
+          reader.readAsDataURL(_currentPdfBlob);
+          reader.onloadend = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = reject;
+        });
+
+        const Plugins = window.Capacitor && window.Capacitor.Plugins;
+        const Filesystem = Plugins && Plugins.Filesystem;
+        const Share = Plugins && Plugins.Share;
+
+        if (Filesystem && window.Capacitor.isNativePlatform()) {
+          const fileName = 'WageTrack_Report.pdf';
+
+          // 1. Write to CACHE - Always writeable and safe for sharing
+          await Filesystem.writeFile({
+            path: fileName,
+            data: base64Data,
+            directory: 'CACHE',
+            encoding: 'base64'
+          });
+
+          // 2. Get the URI for the file
+          const { uri } = await Filesystem.getUri({
+            path: fileName,
+            directory: 'CACHE'
+          });
+
+          if (Share) {
+            if (window.showToast) showToast('Opening Share menu...');
+            // 3. Share the file. ONLY 'files' to avoid WhatsApp rejection bugs.
+            await Share.share({
+              files: [uri]
+            });
+          } else {
+            if (window.showToast) showToast('✅ Saved to app cache');
+          }
+
+        } else {
+          // Web fallback
+          const blobUrl = URL.createObjectURL(_currentPdfBlob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = _currentPdfFilename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+          if (window.showToast) showToast('Download triggered!');
+        }
+
+      } catch (e) {
+        console.error('Export error:', e);
+        if (window.showToast) showToast('Export Error: ' + e.message);
+      }
+    }
+  </script>
+  <style>
+    /* PDF VIEWER OVERLAY */
+    #pdf-viewer-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #0d1117;
+      z-index: 9999;
+      flex-direction: column;
+    }
+
+    #pdf-viewer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+      gap: 12px;
+    }
+
+    #pdf-viewer-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f0c040;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .pdf-hdr-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      flex-shrink: 0;
+    }
+
+    .pdf-hdr-btn.accent {
+      background: #f0c040;
+      color: #000;
+      border-color: #f0c040;
+    }
+
+    .pdf-hdr-btn:active {
+      opacity: 0.8;
+    }
+
+    #pdf-canvas-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      background: #30363d;
+    }
+
+    #pdf-loading {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(1, 4, 9, 0.85);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 10000;
+      color: #f0c040;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .pdf-spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #30363d;
+      border-top-color: #f0c040;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    :root {
+      --bg: #010409;
+      --surface: #0d1117;
+      --surface-raised: #161b22;
+      --surface-overlay: #21262d;
+      --border: #30363d;
+      --border-muted: #21262d;
+      --accent: #f0c040;
+      --accent-bright: #ffd700;
+      --accent-soft: rgba(240, 192, 64, 0.15);
+      --accent-glow: rgba(240, 192, 64, 0.3);
+      --accent2: #3fb950;
+      --accent3: #f85149;
+      --text: #c9d1d9;
+      --text-bright: #ffffff;
+      --text-muted: #8b949e;
+      --muted: var(--text-muted);
+      --info: #58a6ff;
+      --danger: #f85149;
+      --danger-soft: rgba(248, 81, 73, 0.15);
+      --font: 'Plus Jakarta Sans', sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+      --gradient-gold: linear-gradient(135deg, #f0c040 0%, #ffcd4d 100%);
+      --gradient-gold-hover: linear-gradient(135deg, #ffcd4d 0%, #f0c040 100%);
+      --radius: 16px;
+      --radius-sm: 8px;
+      --radius-lg: 24px;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      --container-pad: 18px;
+    }
+
+    html,
+    body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      overflow: hidden;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+    }
+
+    /* APP SHELL */
+    .app {
+      max-width: 420px;
+      margin: 0 auto;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      position: relative;
+      overflow: hidden;
+      border-left: 1px solid var(--border-muted);
+      border-right: 1px solid var(--border-muted);
+    }
+
+    /* HEADER */
+    .header {
+      padding: 8px var(--container-pad);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      background: rgba(13, 17, 23, 0.9);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      z-index: 100;
+    }
+
+    .header-title {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.8px;
+      color: var(--text-bright);
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-logo {
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, var(--accent), #ffda7d);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #000;
+      font-weight: 900;
+      font-size: 22px;
+      box-shadow: 0 4px 15px var(--accent-glow);
+    }
+
+    .header-title span {
+      color: var(--accent);
+      filter: brightness(1.2);
+    }
+
+    .header-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-weight: 600;
+    }
+
+    .logout-btn {
+      background: var(--surface-raised);
+      color: var(--text-bright);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: var(--transition);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .logout-btn:active {
+      transform: scale(0.96);
+      background: var(--surface-overlay);
+    }
+
+    /* SCREENS */
+    .screen {
+      display: none;
+      flex-direction: column;
+      height: 100%;
+      overflow-y: auto;
+      padding-bottom: 110px;
+      scrollbar-width: none;
+      animation: screenFadeIn 0.35s cubic-bezier(0.2, 0, 0, 1);
+      position: relative;
+    }
+
+    @keyframes screenFadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes livePulse {
+      0% { transform: scale(1); opacity: 0.6; box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.4); }
+      70% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 0 8px rgba(63, 185, 80, 0); }
+      100% { transform: scale(1); opacity: 0.6; box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      background: #3fb950;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 8px;
+      animation: livePulse 2s infinite;
+      vertical-align: middle;
+      box-shadow: 0 0 10px rgba(63, 185, 80, 0.5);
+    }
+
+    @keyframes revealItem {
+      0% { opacity: 0; transform: translateY(12px) scale(0.98); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .reveal {
+      opacity: 0;
+      animation: revealItem 0.45s cubic-bezier(0.2, 0, 0, 1) forwards;
+    }
+
+    .screen::-webkit-scrollbar {
+      display: none;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    /* BOTTOM NAV */
+    .bottom-nav {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(22, 27, 34, 0.9);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-top: 1px solid var(--border);
+      display: flex;
+      padding: 10px var(--container-pad) 32px;
+      z-index: 100;
+    }
+
+    .nav-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-family: var(--font);
+      font-size: 10px;
+      font-weight: 700;
+      transition: var(--transition);
+    }
+
+    .nav-btn.active {
+      color: var(--accent);
+    }
+
+    .nav-btn svg {
+      width: 20px;
+      height: 20px;
+      stroke-width: 2px;
+      transition: var(--transition);
+    }
+
+    .nav-btn:active svg {
+      transform: scale(0.9);
+    }
+
+    .nav-btn.active svg {
+      filter: drop-shadow(0 0 6px var(--accent-glow));
+    }
+
+    /* DASHBOARD WIDGET */
+    /* Dashboard Card Base */
+    .dashboard-card {
+      background: #000000;
+      border: 1px solid rgba(240,192,64,0.2);
+      border-radius: 20px;
+      margin: 12px var(--container-pad) 0;
+      padding: 16px 0;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+    }
+
+    .dash-header {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    .dash-header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      margin-bottom: 2px;
+    }
+
+    .dash-main-val {
+      font-size: 44px;
+      font-weight: 800;
+      color: var(--text-bright);
+      line-height: 1;
+      margin-top: 0;
+      /* Pushed up */
+      font-family: var(--mono);
+      letter-spacing: -2px;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .dash-grid {
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 5px;
+      width: 100%;
+    }
+
+    .dash-stat {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 5px;
+    }
+
+    .dash-stat-val {
+      font-size: 26px;
+      font-weight: 800;
+      color: #ffffff !important;
+      font-family: var(--mono);
+      margin: 0;
+    }
+
+    .dash-stat-label {
+      font-size: 10px;
+      color: #f0c040 !important;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    /* CARDS */
+    .card {
+      background: rgba(22, 27, 34, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin: 0 var(--container-pad) 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .card-label {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    /* SECTION HEADER */
+    .section-head {
+      padding: 16px var(--container-pad) 12px; /* Standardized All Screens - Optimized Spacing */
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .section-head h2 {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--text-muted);
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+    }
+
+    /* BUTTONS */
+    .pill-btn {
+      background: var(--gradient-gold);
+      color: #000;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 15px rgba(240, 192, 64, 0.3);
+      white-space: nowrap;
+    }
+
+    .pill-btn:hover {
+      background: var(--gradient-gold-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(240, 192, 64, 0.4);
+    }
+
+    .pill-btn:active {
+      transform: scale(0.96);
+      filter: brightness(0.9);
+    }
+
+    .pill-btn.secondary {
+      background: var(--surface-raised);
+      color: var(--text-bright);
+      border: 1px solid var(--border);
+      box-shadow: none;
+    }
+
+    .pill-btn.danger {
+      background: var(--danger-soft);
+      color: var(--danger);
+      border: 1px solid var(--danger);
+      box-shadow: none;
+    }
+
+    /* ACTION GRID (Home Screen) */
+    /* ACTION GRID (Home Screen) REDESIGN */
+    .action-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 10px var(--container-pad) 16px; /* Optimized bottom spacing */
+      padding: 0;
+    }
+
+    .action-label {
+      grid-column: span 2;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      margin-bottom: -4px;
+      margin-left: 4px;
+      text-transform: uppercase;
+      margin-top: 12px;
+    }
+
+    .action-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: var(--transition);
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .action-btn:active {
+      transform: scale(0.95);
+    }
+
+    .action-btn.primary {
+      background: var(--accent);
+      color: #000;
+      border: none;
+    }
+
+    .action-btn.outline-success {
+      border-color: var(--accent2);
+      color: var(--accent2);
+      background: transparent;
+    }
+
+    .action-btn.attendance {
+      background: #1a202c;
+      color: var(--text-bright);
+      border-color: var(--border);
+    }
+
+    .action-btn-text {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    /* Pulse Animation for Sync */
+    @keyframes pulse-gold {
+      0% {
+        box-shadow: 0 0 0 0 rgba(240, 192, 64, 0.4);
+      }
+
+      70% {
+        box-shadow: 0 0 0 10px rgba(240, 192, 64, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(240, 192, 64, 0);
+      }
+    }
+
+    .pulse-sync {
+      animation: pulse-gold 2s infinite;
+    }
+
+    /* PRODUCTION TABS */
+    .report-tabs-container {
+      margin: 16px var(--container-pad) 16px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 14px;
+      padding: 5px;
+      display: flex;
+      gap: 5px;
+      height: 54px;
+      position: relative;
+      z-index: 10;
+    }
+
+    .report-tabs-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    .report-tab {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 800;
+      color: #8b949e;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .report-tab.active {
+      background: #f0c040;
+      color: #000000 !important;
+      box-shadow: 0 4px 12px rgba(240, 192, 64, 0.2);
+    }
+
+    /* WORKER & ENTRY ITEMS */
+    .list-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 16px var(--container-pad);
+      display: grid;
+      grid-template-columns: 48px 1fr auto;
+      /* FIXED Icon, FLEX Main, AUTO Right */
+      align-items: center;
+      gap: 12px;
+      transition: var(--transition);
+      cursor: pointer;
+    }
+
+    .list-item:active {
+      background: var(--surface-raised);
+    }
+
+    .list-item.clickable:active {
+      transform: scale(0.98);
+      background: var(--surface-overlay);
+      border-color: var(--accent);
+    }
+
+    .list-item.clickable {
+      cursor: pointer !important;
+      transition: var(--transition);
+    }
+
+    .list-item.clickable:hover {
+      border-color: var(--accent-glow);
+    }
+
+    .item-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--surface-raised);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      border: 1px solid var(--border);
+    }
+
+    .item-main {
+      min-width: 0;
+      /* Critical for ellipsis */
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .item-title {
+      gap: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* LOGIN SCREEN */
+    .login-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: radial-gradient(circle at top right, var(--surface-raised), transparent);
+    }
+
+    .login-card {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 32px 24px;
+      border-radius: 24px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    }
+
+    .login-title {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text-bright);
+      margin-bottom: 8px;
+    }
+
+    .login-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    .form-input {
+      width: 100%;
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      color: var(--text-bright);
+      padding: 14px 16px;
+      border-radius: 12px;
+      font-family: var(--font);
+      font-size: 14px;
+      transition: var(--transition);
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: var(--surface-overlay);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+
+
+    .item-right {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .item-value {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--accent);
+      font-family: var(--mono);
+      line-height: 1;
+    }
+
+    .item-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    /* FORM STYLES */
+    .form-group {
+      margin-bottom: 20px;
+      padding: 0 var(--container-pad);
+    }
+
+    .form-label {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: block;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .form-input {
+      width: 100%;
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: var(--text-bright);
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 600;
+      outline: none;
+      transition: var(--transition);
+      -webkit-appearance: none;
+    }
+
+    .form-input:focus {
+      border-color: var(--accent);
+      background: var(--bg);
+      box-shadow: 0 0 0 4px var(--accent-glow);
+    }
+
+    .form-input[readonly],
+    .form-input:disabled {
+      background: var(--surface-raised);
+      border-color: var(--border-muted);
+      color: var(--text-muted);
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    /* GRID & SUMMARY */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 0 var(--container-pad) 12px;
+    }
+
+    .summary-bar {
+      margin: 16px var(--container-pad) 20px;
+      background: rgba(22, 27, 34, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 16px 16px 20px;
+      /* Denser vertical wrap */
+      display: flex;
+      box-shadow: var(--shadow);
+      position: relative;
+      z-index: 5;
+    }
+
+    .summary-item {
+      flex: 1;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .summary-item+.summary-item {
+      border-left: 1px solid var(--border);
+    }
+
+    .summary-val {
+      font-size: 26px;
+      font-weight: 800;
+      font-family: var(--mono);
+      color: var(--text-bright);
+      line-height: 1;
+    }
+
+    .summary-val span {
+      font-size: 16px;
+      color: var(--accent);
+      margin-right: 2px;
+    }
+
+    .summary-lbl {
+      font-size: 8px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    /* QUICK CHIPS (Reports screen) */
+    .quick-chip {
+      padding: 8px 16px;
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: var(--transition);
+      font-family: var(--font);
+    }
+
+    .quick-chip.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* MODAL */
+    .modal-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      align-items: flex-end;
+      backdrop-filter: blur(8px);
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal {
+      width: 100%;
+      background: rgba(13, 17, 23, 0.9);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-top: 1px solid var(--border);
+      border-radius: 32px 32px 0 0;
+      padding: 24px 0 40px;
+      animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      max-height: 92vh;
+      overflow-y: auto;
+      box-shadow: 0 -15px 50px rgba(0, 0, 0, 0.4);
+      scrollbar-width: none;
+    }
+
+    .modal::-webkit-scrollbar {
+      display: none;
+    }
+
+    @keyframes slideUp {
+      from {
+        transform: translateY(100%);
+      }
+
+      to {
+        transform: translateY(0);
+      }
+    }
+
+    .modal-title {
+      font-size: 20px;
+      font-weight: 800;
+      padding: 0 24px 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-bright);
+      letter-spacing: -0.5px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      padding: 8px 20px 0;
+    }
+
+    .modal-actions .pill-btn {
+      flex: 1;
+      padding: 14px;
+      font-size: 15px;
+      border-radius: 12px;
+    }
+
+    /* TOAST */
+    .toast {
+      position: absolute;
+      bottom: 110px;
+      left: 50%;
+      transform: translateX(-50%) translateY(24px);
+      background: var(--text-bright);
+      color: var(--bg);
+      padding: 12px 24px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 800;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+      z-index: 2000;
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+
+    /* DATE BADGE */
+    .date-badge {
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      text-align: center;
+      margin: 24px auto 16px;
+      display: block;
+      width: fit-content;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+
+    /* LOGIN SCREEN */
+    .login-container {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+      background: radial-gradient(circle at top right, #161b22 0%, #0d1117 100%);
+    }
+
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 48px 32px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+    }
+
+    .login-title {
+      font-size: 24px;
+      font-weight: 800;
+      text-align: center;
+      margin-bottom: 8px;
+      color: var(--text-bright);
+    }
+
+    .login-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    /* UTILS */
+    .hidden {
+      display: none !important;
+    }
+
+    .empty {
+      padding: 64px 32px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .empty-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .empty-text {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.5;
+    }
+
+    /* CUSTOM CHECKBOX STYLE */
+    .custom-check {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .custom-check:active {
+      background: var(--surface-overlay);
+    }
+
+    .custom-check input {
+      width: 20px;
+      height: 20px;
+      accent-color: var(--accent);
+    }
+
+    /* USER MANAGEMENT */
+    .user-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .user-name-row {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-bright);
+      margin-bottom: 4px;
+    }
+
+    .user-role-row {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+
+    <!-- HEADER -->
+    <header class="header hidden" id="main-header">
+      <div class="header-title">
+        <div class="header-logo">WT</div>
+        Wage<span>Track</span> <small style="font-size:10px; color:var(--accent); opacity:0.8;">v2.1</small>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button class="pill-btn secondary" id="sync-btn" onclick="syncData()"
+          style="width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:10px; background:var(--surface-raised); border-color:var(--border); color:var(--text-muted);">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path
+              d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-4.4 3.6-8 8-8 3.3 0 6.2 2 7.4 5M22 12c0 4.4-3.6 8-8 8-3.3 0-6.2-2-7.4-5" />
+          </svg>
+        </button>
+        <div
+          style="background:rgba(240,192,64,0.1); border:1px solid rgba(240,192,64,0.3); padding:6px 14px; border-radius:12px; font-size:12px; font-family:var(--mono); color:var(--accent); font-weight:700; letter-spacing:-0.2px; box-shadow:0 2px 10px rgba(0,0,0,0.2);"
+          id="worker-count-badge">0 workers</div>
+        <button class="pill-btn secondary" onclick="doLogout()"
+          style="width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:10px; background:var(--surface-raised); border-color:var(--border);">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- SCREEN: LOGIN -->
+    <div class="screen" id="screen-login">
+      <div class="login-container">
+        <div class="login-card">
+          <div class="header-title"
+            style="text-align:center; font-size:28px; margin-bottom:10px; justify-content:center;">
+            <div class="header-logo" style="width:36px; height:36px; font-size:24px; border-radius:8px;">WT</div>
+            Wage<span>Track</span>
+          </div>
+          <div class="login-title">Welcome Back</div>
+          <div class="login-subtitle">Please login to manage worker salaries</div>
+
+          <div class="form-group" style="margin:0 0 16px;">
+            <label class="form-label" for="l-user">USERNAME</label>
+            <input class="form-input" id="l-user" placeholder="Enter username" />
+          </div>
+          <div class="form-group" style="margin:0 0 24px;">
+            <label class="form-label" for="l-pass">PASSWORD</label>
+            <input class="form-input" id="l-pass" type="password" placeholder="Enter password" />
+          </div>
+
+          <button class="pill-btn" style="width:100%; padding:14px; font-size:16px;" onclick="doLogin()">Login</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-home" style="padding-top: 8px;">
+      <!-- Dashboard -->
+      <div class="dashboard-card" style="border: 1px solid rgba(240,192,64,0.3); background:#000000; display:block;">
+        <div class="dash-grid">
+          <div class="dash-stat">
+            <div class="dash-stat-val" id="dash-active-workers" style="color:#ffffff !important; font-size: 24px;">0 / 0</div>
+            <div class="dash-stat-label" style="color:#f0c040 !important;">Workers</div>
+          </div>
+          <div class="dash-stat" style="border-left:1px solid rgba(255,255,255,0.08); border-right:1px solid rgba(255,255,255,0.08);">
+            <div class="dash-stat-val" id="dash-total-kg" style="color:#ffffff !important; font-size: 24px;">0 kg</div>
+            <div class="dash-stat-label" style="color:#f0c040 !important;">Total Output</div>
+          </div>
+          <div class="dash-stat">
+            <div class="dash-stat-val" id="dash-total-wage" style="color:#ffffff !important; font-size: 24px;">₹0</div>
+            <div class="dash-stat-label" style="color:#f0c040 !important;">Today's Total</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-grid">
+        <label class="action-label">Quick Actions</label>
+        <div class="action-btn attendance" onclick="openAttendance()">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+          <div class="action-btn-text">Attendance</div>
+        </div>
+        <div class="action-btn outline-success" onclick="openQuickAssignMenu()">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+          <div class="action-btn-text">Quick Assign</div>
+        </div>
+        <div class="action-btn primary" style="grid-column: span 2; flex-direction: row; height: 50px;"
+          onclick="openAddEntry()">
+          <span style="font-size: 24px; font-weight: 300;">+</span>
+          <div class="action-btn-text" style="font-size: 15px;">New Daily Entry</div>
+        </div>
+      </div>
+
+      <!-- Production Tabs -->
+      <div class="report-tabs-container">
+        <div class="report-tab active" id="prod-tab-all" onclick="switchProductionTab('all')">All</div>
+        <div class="report-tab" id="prod-tab-1" onclick="switchProductionTab('daily')">Prod 1</div>
+        <div class="report-tab" id="prod-tab-2" onclick="switchProductionTab('permanent')">Prod 2</div>
+        <div class="report-tab" id="prod-tab-3" onclick="switchProductionTab('packing')">Prod 3</div>
+        <div class="report-tab" id="prod-tab-4" onclick="switchProductionTab('other')">Prod 4</div>
+      </div>
+
+      <div id="today-entries-list" style="margin-top: 12px;"></div>
+    </div>
+
+    <!-- SCREEN: WORKERS -->
+    <div class="screen" id="screen-workers">
+      <div class="section-head">
+        <h2>WORKERS</h2>
+        <div style="display:flex;gap:6px;">
+          <button class="pill-btn secondary" onclick="uploadToDrive()"
+            style="font-size:11px;padding:6px 10px;display:flex;align-items:center;gap:4px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <path
+                d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 15L6.3 21h13.12l3.43-6M18.73 15L12 3.5 8.57 9.5 15.29 21z" />
+            </svg> Drive
+          </button>
+          <button class="pill-btn secondary" onclick="openLeaderboard()">🏆 Top</button>
+          <button class="pill-btn" onclick="openAddWorker()">+ Worker</button>
+        </div>
+      </div>
+      <!-- Search Bar -->
+      <div style="padding: 0 var(--container-pad) 12px;">
+        <div
+          style="position:relative; background:var(--surface); border:1px solid var(--border); border-radius:12px; display:flex; align-items:center; padding:0 12px; gap:8px;">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--text-muted)" stroke-width="2.5"
+            style="opacity:0.6;">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+          <input type="text" id="worker-search" placeholder="Search by name or ID..." oninput="renderWorkers()"
+            style="flex:1; background:none; border:none; padding:12px 0; color:var(--text-bright); font-size:14px; outline:none;" />
+        </div>
+      </div>
+      <div id="workers-list"></div>
+    </div>
+
+    <!-- SCREEN: REPORTS -->
+    <div class="screen" id="screen-reports">
+      <div style="padding:14px var(--container-pad) 10px;">
+        <div style="font-size:18px;font-weight:800;margin-bottom:2px;">Reports</div>
+        <div style="font-size:11px;color:var(--text-muted);font-family:var(--mono);">Filter & generate salary summary</div>
+      </div>
+
+      <!-- Production Type Tabs -->
+      <div class="report-tabs-container">
+        <div class="report-tab active" id="report-prod-all" onclick="switchReportProductionTab('all')">All</div>
+        <div class="report-tab" id="report-prod-1" onclick="switchReportProductionTab('daily')">Prod 1</div>
+        <div class="report-tab" id="report-prod-2" onclick="switchReportProductionTab('permanent')">Prod 2</div>
+        <div class="report-tab" id="report-prod-3" onclick="switchReportProductionTab('packing')">Prod 3</div>
+        <div class="report-tab" id="report-prod-4" onclick="switchReportProductionTab('other')">Prod 4</div>
+      </div>
+
+      <!-- FILTER CARD -->
+      <div style="margin:0 var(--container-pad) 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px;">
+
+        <!-- Period chips: 4 only -->
+        <div
+          style="font-size:10px;font-family:var(--mono);color:var(--text-muted);letter-spacing:0.5px;margin-bottom:8px;">
+          PERIOD</div>
+        <div style="display:flex;gap:8px;margin-bottom:14px;">
+          <button class="quick-chip active" id="chip-today" onclick="applyQuick('today',this)">Today</button>
+          <button class="quick-chip" id="chip-week" onclick="applyQuick('week',this)">This Week</button>
+          <button class="quick-chip" id="chip-month" onclick="applyQuick('month',this)">This Month</button>
+          <button class="quick-chip" id="chip-custom" onclick="applyQuick('custom',this)">Custom</button>
+        </div>
+
+        <!-- Custom date range (hidden) -->
+        <div id="custom-range-box"
+          style="display:none;margin-bottom:14px;padding:12px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);">
+          <div style="display:flex;gap:10px;align-items:center;">
+            <div style="flex:1;">
+              <label class="form-label" for="r-from"
+                style="font-size:10px;font-family:var(--mono);color:var(--text-muted);margin-bottom:4px;display:block;">FROM</label>
+              <input class="form-input" id="r-from" type="date" style="padding:9px 10px;font-size:13px;"
+                onchange="applyCustomRange()" />
+            </div>
+            <div style="font-size:18px;color:var(--text-muted);margin-top:14px;">&#8594;</div>
+            <div style="flex:1;">
+              <label class="form-label" for="r-to"
+                style="font-size:10px;font-family:var(--mono);color:var(--text-muted);margin-bottom:4px;display:block;">TO</label>
+              <input class="form-input" id="r-to" type="date" style="padding:9px 10px;font-size:13px;"
+                onchange="applyCustomRange()" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Worker dropdown -->
+        <label class="form-label" for="worker-filter-select">WORKER</label>
+        <select class="form-input" id="worker-filter-select" onchange="onWorkerFilterChange(this.value)"
+          style="padding:10px 12px;font-size:13px;">
+          <option value="all">All Workers</option>
+        </select>
+      </div>
+
+      <!-- Period badge + export row -->
+      <div style="margin:0 16px 10px;display:flex;align-items:center;justify-content:space-between;">
+        <div
+          style="font-size:12px;font-family:var(--mono);color:var(--accent);background:rgba(240,192,64,0.1);border:1px solid rgba(240,192,64,0.3);padding:5px 12px;border-radius:8px;"
+          id="period-badge">Today</div>
+        <div style="display:flex;gap:6px;">
+          <button class="pill-btn secondary" onclick="exportReportPDF()"
+            style="font-size:11px;padding:5px 12px;">&#8595; PDF</button>
+          <button class="pill-btn secondary" onclick="cloudSyncReport()"
+            style="font-size:11px;padding:5px 12px;display:flex;align-items:center;gap:4px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <path
+                d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 15L6.3 21h13.12l3.43-6M18.73 15L12 3.5 8.57 9.5 15.29 21z" />
+            </svg> Drive
+          </button>
+        </div>
+      </div>
+
+      <div id="report-content"></div>
+    </div>
+
+    <!-- SCREEN: LEADERBOARD -->
+    <div class="screen" id="screen-leaderboard">
+      <div style="padding:14px 16px 10px; display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <div style="font-size:18px;font-weight:800;margin-bottom:2px;">Top Performers</div>
+          <div style="font-size:11px;color:var(--text-muted);font-family:var(--mono);">Highest output in KG</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="pill-btn secondary" onclick="exportLeaderboardPDF()"
+            style="padding:6px 10px; font-size:11px;">&#8595; PDF</button>
+          <button class="pill-btn secondary" onclick="closeLeaderboard()">Close</button>
+        </div>
+      </div>
+
+      <div class="report-tabs" style="margin-bottom:12px;">
+        <div class="report-tab active" id="lb-tab-daily" onclick="renderLeaderboard('daily')">Daily</div>
+        <div class="report-tab" id="lb-tab-weekly" onclick="renderLeaderboard('weekly')">Weekly</div>
+        <div class="report-tab" id="lb-tab-monthly" onclick="renderLeaderboard('monthly')">Monthly</div>
+      </div>
+
+      <div id="leaderboard-content" style="padding:0 16px;"></div>
+    </div>
+
+    <!-- SCREEN: ATTENDANCE -->
+    <div class="screen" id="screen-attendance">
+      <div style="padding:14px 16px 10px; display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <div style="font-size:18px;font-weight:800;margin-bottom:2px;">Attendance</div>
+          <div style="font-size:11px;color:var(--text-muted);font-family:var(--mono);">Mark presence, OT, and advances
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="pill-btn" style="background:var(--accent2);color:#000;" onclick="markAllPresent()">&#10003; All
+            Present</button>
+          <button class="pill-btn secondary" onclick="closeAttendance()">Close</button>
+        </div>
+      </div>
+      <div style="margin:0 16px 12px;">
+        <label class="form-label" for="att-date">Attendance Date</label>
+        <input type="date" id="att-date" class="form-input" onchange="renderAttendanceList()" />
+      </div>
+      <div id="attendance-list" style="padding:0 16px;"></div>
+    </div>
+
+    <!-- SCREEN: USERS (Admin Only) -->
+    <div class="screen" id="screen-users">
+      <div class="section-head">
+        <div>
+          <div style="font-size:18px;font-weight:800;margin-bottom:2px;">User Management</div>
+          <div style="font-size:11px;color:var(--text-muted);font-family:var(--mono);">Add or manage supervisors</div>
+        </div>
+        <button class="pill-btn" onclick="openAddUser()">+ User</button>
+      </div>
+      <div id="users-list" style="padding:0 16px;"></div>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <div class="bottom-nav">
+      <button class="nav-btn active" onclick="switchScreen('home',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        </svg>
+        Today
+      </button>
+      <button class="nav-btn" onclick="switchScreen('workers',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+        Workers
+      </button>
+      <button class="nav-btn" onclick="switchScreen('reports',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10" />
+          <line x1="12" y1="20" x2="12" y2="4" />
+          <line x1="6" y1="20" x2="6" y2="14" />
+        </svg>
+        Reports
+      </button>
+      <button class="nav-btn admin-only hidden" id="nav-users" onclick="switchScreen('users',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <polyline points="16 11 18 13 22 9" />
+        </svg>
+        Users
+      </button>
+    </div>
+
+    <!-- MODAL: ADD WORKER -->
+    <div class="modal-overlay" id="modal-worker">
+      <div class="modal">
+        <div class="modal-title">
+          <span>Worker Details</span>
+          <button class="pill-btn secondary" onclick="closeModal('modal-worker')"
+            style="padding:8px 12px; font-size:11px;">CLOSE</button>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 12px; padding:0 16px;">
+          <div class="form-group" style="padding:0;">
+            <label class="form-label" for="w-empid">Employee ID</label>
+            <input class="form-input" id="w-empid" placeholder="EMP001" />
+          </div>
+          <div class="form-group" style="padding:0;">
+            <label class="form-label" for="w-phone">Phone</label>
+            <input class="form-input" id="w-phone" type="tel" placeholder="98765..." />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="w-name">Worker Name</label>
+          <input class="form-input" id="w-name" placeholder="Full Name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="w-type">Production Section</label>
+          <select class="form-input" id="w-type" onchange="toggleWorkerTypeFields(this.value)">
+            <option value="daily">Production 1 (Daily/Piece)</option>
+            <option value="permanent">Production 2 (Fixed Salary)</option>
+            <option value="packing">Production 3 (Packing Piece)</option>
+            <option value="other">Production 4 (General Work)</option>
+          </select>
+        </div>
+        <div id="w-salary-group" class="form-group hidden">
+          <label class="form-label" for="w-salary">Monthly Fixed Salary (₹)</label>
+          <input class="form-input" id="w-salary" type="number" placeholder="15000" />
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 12px; padding:0 16px;">
+          <div class="form-group" style="padding:0;">
+            <label class="form-label" for="w-ot-rate">OT Rate (₹/hr)</label>
+            <input class="form-input" id="w-ot-rate" type="number" placeholder="50" />
+          </div>
+          <div class="form-group" style="padding:0;">
+            <label class="form-label" for="w-ot-fixed">Fixed OT (₹)</label>
+            <input class="form-input" id="w-ot-fixed" type="number" placeholder="Flat daily" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="pill-btn" onclick="saveWorker()" id="save-worker-btn">SAVE WORKER</button>
+          <button class="pill-btn danger" id="delete-worker-btn" style="display:none;"
+            onclick="deleteWorker()">DELETE</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: WORKER 360 PROFILE -->
+    <div class="modal-overlay" id="modal-worker-360">
+      <div class="modal" style="max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="modal-title">
+          <span id="w360-name">Worker Profile</span>
+          <button class="pill-btn secondary" onclick="closeModal('modal-worker-360')"
+            style="padding:8px 12px; font-size:11px;">CLOSE</button>
+        </div>
+
+        <div id="w360-content" style="flex: 1; overflow-y: auto; padding: 0 16px 20px;">
+          <!-- Header Card -->
+          <div
+            style="background:var(--surface-raised); border: 1px solid var(--border); border-radius:16px; padding:16px; margin-bottom:16px; display:flex; align-items:center; gap:16px;">
+            <div id="w360-emoji" style="font-size:40px;">👷</div>
+            <div>
+              <div id="w360-title" style="font-size:20px; font-weight:800; color:var(--text-bright);">Worker Name</div>
+              <div id="w360-subtitle" style="font-size:11px; color:var(--text-muted); font-family:var(--mono);">EMP001 ·
+                Production 1</div>
+            </div>
+          </div>
+
+          <!-- Stats Grid -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
+            <div style="background:var(--surface); border:1px solid var(--border); padding:12px; border-radius:12px;">
+              <div style="font-size:9px; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px;">Wages
+                Earned (Month)</div>
+              <div id="w360-month-wage"
+                style="font-size:16px; font-weight:700; color:var(--accent); font-family:var(--mono);">₹0</div>
+            </div>
+            <div style="background:var(--surface); border:1px solid var(--border); padding:12px; border-radius:12px;">
+              <div style="font-size:9px; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px;">
+                Outstanding Advance</div>
+              <div id="w360-advance"
+                style="font-size:16px; font-weight:700; color:var(--danger); font-family:var(--mono);">₹0</div>
+            </div>
+          </div>
+
+          <!-- Recent Activity -->
+          <div
+            style="font-size:11px; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;">
+            Recent Activity (7 Days)</div>
+          <div id="w360-history" style="display:flex; flex-direction:column; gap:8px;"></div>
+        </div>
+
+        <div class="modal-actions" style="border-top: 1px solid var(--border); padding: 16px;">
+          <button class="pill-btn" style="width:100%;" id="w360-edit-btn">EDIT WORKER INFO</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="modal-entry">
+      <div class="modal">
+        <div class="modal-title">
+          <span id="entry-modal-title">Daily Piece Work</span>
+          <button class="pill-btn secondary" onclick="closeModal('modal-entry')"
+            style="padding:8px 12px; font-size:11px;">CLOSE</button>
+        </div>
+        <input type="hidden" id="e-id" value="" />
+        <div class="form-group">
+          <label class="form-label" for="e-worker">Select Worker</label>
+          <select class="form-input" id="e-worker"></select>
+        </div>
+        <div style="display:grid; grid-template-columns:1.2fr 0.8fr; gap:0 12px; padding:0 16px;">
+          <div class="form-group" style="padding:0;">
+            <label class="form-label" for="e-date">Date</label>
+            <input class="form-input" id="e-date" type="date" />
+          </div>
+          <div class="form-group" style="padding:0;" id="e-rate-field">
+            <label class="form-label" for="e-rate">Rate (₹)</label>
+            <input class="form-input" id="e-rate" type="number" oninput="calcPreview()" />
+          </div>
+        </div>
+
+        <!-- Production 1 & 2 Fields (Daily/Permanent - KG based) -->
+        <div id="e-kg-fields-container" style="display:contents;">
+          <div class="form-group hidden" id="e-kg-fields">
+            <label class="form-label" for="e-assigned-morning">Morning Assignment (KG)</label>
+            <input class="form-input" id="e-assigned-morning" type="number" placeholder="0" oninput="syncKgFromAssigned()" />
+          </div>
+          <div class="form-group hidden" id="e-kg-fields-2">
+            <label class="form-label" for="e-assigned-afternoon">Afternoon Assignment (KG)</label>
+            <input class="form-input" id="e-assigned-afternoon" type="number" placeholder="0" oninput="syncKgFromAssigned()" />
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 12px; padding:0 16px;" id="e-kg-sync-row" class="hidden">
+            <div class="form-group" style="padding:0;">
+              <label class="form-label" for="e-output-kg" style="color:var(--accent2);">Completed (KG)</label>
+              <input class="form-input" id="e-output-kg" type="number" placeholder="0" oninput="syncKgFromOutput()" style="border-color:rgba(63,185,80,0.3);" />
+            </div>
+            <div class="form-group" style="padding:0;">
+              <label class="form-label" for="e-not-completed" style="color:var(--accent3);">Balance (KG)</label>
+              <input class="form-input" id="e-not-completed" type="number" placeholder="0" oninput="syncKgFromBalance()" style="border-color:rgba(248,81,73,0.3);" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Production 3 Fields (Packing - Pieces and Rate only) -->
+        <div class="form-group hidden" id="e-packing-pieces">
+          <label class="form-label" for="e-pack-pieces">Number of Pieces</label>
+          <input class="form-input" id="e-pack-pieces" type="number" placeholder="0" oninput="calcPreview()" />
+        </div>
+        <div class="form-group hidden" id="e-packing-rate">
+          <label class="form-label" for="e-pack-rate">Rate per Piece (₹)</label>
+          <input class="form-input" id="e-pack-rate" type="number" placeholder="0" oninput="calcPreview()" />
+        </div>
+
+        <!-- Production 4 Fields (Other - Work description + amount) -->
+        <div class="form-group hidden" id="e-work-desc">
+          <label class="form-label" for="e-work-name">Work Description</label>
+          <input class="form-input" id="e-work-name" type="text" placeholder="e.g. Loading, Cleaning"
+            oninput="calcPreview()" />
+        </div>
+        <div class="form-group hidden" id="e-payment-field">
+          <label class="form-label" for="e-payment">Payment Amount (₹)</label>
+          <input class="form-input" id="e-payment" type="number" placeholder="0" oninput="calcPreview()" />
+        </div>
+
+        <!-- PREVIEW -->
+        <div style="padding:0 16px;">
+          <div class="card" id="wage-preview"
+            style="margin:8px 0 20px; background:var(--accent-glow); border-color:var(--accent-soft); display:none;">
+            <div class="card-label">WAGE PREVIEW</div>
+            <div style="font-size:26px; font-weight:800; font-family:var(--mono); color:var(--accent);"
+              id="preview-amount">₹0</div>
+            <div style="font-size:11px; color:var(--text-muted); font-family:var(--mono); margin-top:4px;"
+              id="preview-calc">—</div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="pill-btn" onclick="saveEntry()" id="btn-save-entry">SAVE ENTRY</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: ADD USER (Admin Only) -->
+    <div class="modal-overlay" id="modal-user">
+      <div class="modal">
+        <div class="modal-title">
+          <span id="user-modal-title">Supervisor Account</span>
+          <button class="pill-btn secondary" onclick="closeModal('modal-user')"
+            style="padding:8px 12px; font-size:11px;">CLOSE</button>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="u-username">Username</label>
+          <input class="form-input" id="u-username" placeholder="e.g. supervisor1" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="u-gmail">Email Address</label>
+          <input class="form-input" id="u-gmail" type="email" placeholder="e.g. name@gmail.com" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="u-password">Password</label>
+          <input class="form-input" id="u-password" type="text" placeholder="e.g. pass123" />
+        </div>
+
+        <!-- Production Access & Permissions -->
+        <div style="padding:0 16px; margin-bottom:16px;">
+          <div
+            style="font-size:10px; font-family:var(--mono); color:var(--text-muted); margin-bottom:12px; letter-spacing:1px; text-transform:uppercase; font-weight:700;">
+            PRODUCTION ACCESS & PERMISSIONS</div>
+
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <!-- Prod 1 -->
+            <div
+              style="background:var(--surface-raised); border:1px solid var(--border); border-radius:12px; padding:12px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                <input type="checkbox" id="u-prod1-access" onchange="toggleProdPermissions('prod1', this.checked)"
+                  style="width:18px; height:18px; accent-color:var(--accent);" />
+                <label for="u-prod1-access"
+                  style="font-size:14px; font-weight:700; color:var(--text-bright);">Production 1 — Daily Wage</label>
+              </div>
+              <div id="u-prod1-perms" style="display:none; margin-left:28px; display:flex; gap:16px;">
+                <label
+                  style="font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-muted); cursor:pointer;">
+                  <input type="checkbox" class="u-prod1-perm" value="attendance" style="accent-color:var(--accent2);" />
+                  Attendance
+                </label>
+                <label
+                  style="font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-muted); cursor:pointer;">
+                  <input type="checkbox" class="u-prod1-perm" value="payment" style="accent-color:var(--accent2);" />
+                  Payment
+                </label>
+              </div>
+            </div>
+            <!-- Prod 2 -->
+            <div
+              style="background:var(--surface-raised); border:1px solid var(--border); border-radius:12px; padding:12px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                <input type="checkbox" id="u-prod2-access" onchange="toggleProdPermissions('prod2', this.checked)"
+                  style="width:18px; height:18px; accent-color:var(--accent);" />
+                <label for="u-prod2-access"
+                  style="font-size:14px; font-weight:700; color:var(--text-bright);">Production 2 — Fixed Salary</label>
+              </div>
+              <div id="u-prod2-perms" style="display:none; margin-left:28px; display:flex; gap:16px;">
+                <label
+                  style="font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-muted); cursor:pointer;">
+                  <input type="checkbox" class="u-prod2-perm" value="attendance" style="accent-color:var(--accent2);" />
+                  Attendance
+                </label>
+                <label
+                  style="font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-muted); cursor:pointer;">
+                  <input type="checkbox" class="u-prod2-perm" value="payment" style="accent-color:var(--accent2);" />
+                  Payment
+                </label>
+              </div>
+            </div>
+            <!-- Prod 3 -->
+            <div
+              style="background:var(--surface-raised); border:1px solid var(--border); border-radius:12px; padding:12px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                <input type="checkbox" id="u-prod3-access" onchange="toggleProdPermissions('prod3', this.checked)"
+                  style="width:18px; height:18px; accent-color:var(--accent);" />
+                <label for="u-prod3-access"
+                  style="font-size:14px; font-weight:700; color:var(--text-bright);">Production 3 — Packing</label>
+              </div>
+              <div id="u-prod3-perms" style="display:none; margin-left:28px; display:flex; gap:16px;">
+                <label
+                  style="font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-muted); cursor:pointer;">
+                  <input type="checkbox" class="u-prod3-perm" value="attendance" style="accent-color:var(--accent2);" />
+                  Attendance
+                </label>
+                <label
+                  style="font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-muted); cursor:pointer;">
+                  <input type="checkbox" class="u-prod3-perm" value="payment" style="accent-color:var(--accent2);" />
+                  Payment
+                </label>
+              </div>
+            </div>
+            <!-- Prod 4 -->
+            <div
+              style="background:var(--surface-raised); border:1px solid var(--border); border-radius:12px; padding:12px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                <input type="checkbox" id="u-prod4-access" onchange="toggleProdPermissions('prod4', this.checked)"
+                  style="width:18px; height:18px; accent-color:var(--accent);" />
+                <label for="u-prod4-access"
+                  style="font-size:14px; font-weight:700; color:var(--text-bright);">Production 4 — Other Work</label>
+              </div>
+              <div id="u-prod4-perms" style="display:none; margin-left:28px; display:flex; gap:16px;">
+                <label
+                  style="font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-muted); cursor:pointer;">
+                  <input type="checkbox" class="u-prod4-perm" value="attendance" style="accent-color:var(--accent2);" />
+                  Attendance
+                </label>
+                <label
+                  style="font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-muted); cursor:pointer;">
+                  <input type="checkbox" class="u-prod4-perm" value="payment" style="accent-color:var(--accent2);" />
+                  Payment
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="pill-btn" onclick="saveUser()">SAVE SUPERVISOR</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: QUICK ASSIGN MENU -->
+    <div class="modal-overlay" id="modal-quick-assign-menu">
+      <div class="modal">
+        <div class="modal-title">&#9889; Quick Assign</div>
+        <div style="padding:0 16px 12px; font-size:12px; color:var(--text-muted); font-family:var(--mono);">
+          Choose which production group to assign work to:
+        </div>
+        <div style="padding:0 16px; display:flex; flex-direction:column; gap:10px;">
+          <button class="pill-btn" onclick="openQuickAssign('daily')" style="padding:14px; font-size:14px;">Production 1
+            — Daily Wage</button>
+          <button class="pill-btn" onclick="openQuickAssign('packing')" style="padding:14px; font-size:14px;">Production
+            3 — Packing</button>
+        </div>
+        <div class="modal-actions">
+          <button class="pill-btn secondary" onclick="closeModal('modal-quick-assign-menu')">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: QUICK ASSIGN (Bulk entry for Daily/Packing workers) -->
+    <div class="modal-overlay" id="modal-quick-assign">
+      <div class="modal">
+        <div class="modal-title" id="qa-title">&#9889; Quick Assign</div>
+        <div style="padding:0 16px 12px; font-size:12px; color:var(--text-muted); font-family:var(--mono);"
+          id="qa-subtitle">
+          Assign work to all workers in one click.
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="qa-date">DATE</label>
+          <input class="form-input" id="qa-date" type="date" />
+        </div>
+        <div style="display:grid; grid-template-columns:1fr auto; gap:8px; align-items:end; padding:0 16px 12px;">
+          <div>
+            <label class="form-label" for="qa-total-kg" style="display:block; margin-bottom:6px;">WEIGHT PER WORKER (KG)
+              — Applied to
+              all</label>
+            <input class="form-input" id="qa-total-kg" type="number" placeholder="e.g. 50" oninput="splitTotalKG()" />
+          </div>
+          <button class="pill-btn secondary" style="margin-bottom:0; padding:10px 14px; font-size:12px;"
+            onclick="splitTotalKG()">&#10227; Apply</button>
+        </div>
+        <div id="qa-rate-group" class="form-group">
+          <label class="form-label" for="qa-rate">RATE PER KG (&#8377;) — Applied to all</label>
+          <input class="form-input" id="qa-rate" type="number" placeholder="e.g. 15" oninput="updateQAPreview()" />
+        </div>
+        <div id="qa-workers-list" style="max-height:220px;overflow-y:auto;padding:0 16px 8px;"></div>
+        <div class="modal-actions">
+          <button class="pill-btn secondary" onclick="closeModal('modal-quick-assign')">Cancel</button>
+          <button class="pill-btn" onclick="saveQuickAssign()">&#9889; Assign All</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script>
+    // ── DATA ──────────────────────────────────────────────────────────────────
+    let workers = JSON.parse(localStorage.getItem('wt_workers') || '[]');
+    let entries = JSON.parse(localStorage.getItem('wt_entries') || '[]');
+    let attendance = JSON.parse(localStorage.getItem('wt_attendance') || '[]');
+    let users = JSON.parse(localStorage.getItem('wt_users') || '[]');
+    let currentUser = JSON.parse(localStorage.getItem('wt_session') || 'null');
+    let currentProductionTab = 'daily'; // Track active production tab
+
+    // Initialize Users if empty or corrupted
+    if (!Array.isArray(users) || users.length === 0) {
+      users = [{ username: 'admin', password: 'admin123', gmail: 'admin@gmail.com', role: 'admin', access: {} }];
+      localStorage.setItem('wt_users', JSON.stringify(users));
+    }
+
+    // Migration: Ensure all users have access property
+    let needsMigration = false;
+    users.forEach(u => {
+      if (!u.access) {
+        u.access = {};
+        needsMigration = true;
+      }
+    });
+    if (needsMigration) {
+      localStorage.setItem('wt_users', JSON.stringify(users));
+    }
+
+    // Helper: Check if current user has access to a production type
+    function hasProductionAccess(prodType) {
+      if (!currentUser) return false;
+      if (currentUser.role === 'admin') return true;
+      const prodKey = { daily: 'prod1', permanent: 'prod2', packing: 'prod3', other: 'prod4' }[prodType];
+      return currentUser.access && currentUser.access[prodKey] && currentUser.access[prodKey].length > 0;
+    }
+
+    // Helper: Check if current user has specific action permission for a production type
+    function hasActionPermission(prodType, action) {
+      if (!currentUser) return false;
+      if (currentUser.role === 'admin') return true;
+      const prodKey = { daily: 'prod1', permanent: 'prod2', packing: 'prod3', other: 'prod4' }[prodType];
+      return currentUser.access && currentUser.access[prodKey] && currentUser.access[prodKey].includes(action);
+    }
+
+    // Get accessible production types for current user
+    function getAccessibleProductions() {
+      if (!currentUser) return [];
+      if (currentUser.role === 'admin') return ['daily', 'permanent', 'packing', 'other'];
+      const accessible = [];
+      const mapping = { prod1: 'daily', prod2: 'permanent', prod3: 'packing', prod4: 'other' };
+      if (currentUser.access) {
+        Object.keys(currentUser.access).forEach(prodKey => {
+          if (currentUser.access[prodKey].length > 0) {
+            accessible.push(mapping[prodKey]);
+          }
+        });
+      }
+      return accessible;
+    }
+
+    // Seed demo data if empty
+    if (workers.length === 0) {
+      workers = [
+        { id: 'w1', name: 'Ravi Kumar', emoji: '👷' },
+        { id: 'w2', name: 'Murugan S', emoji: '🧑‍🏭' },
+        { id: 'w3', name: 'Selvi D', emoji: '👩‍🏭' },
+      ];
+      const today = todayStr();
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+      const yStr = yesterday.toISOString().split('T')[0];
+      entries = [
+        { id: 'e1', workerId: 'w1', date: today, assigned: 10, output: 8, rate: 10, wage: 80, notCompleted: 2 },
+        { id: 'e2', workerId: 'w2', date: today, assigned: 10, output: 9, rate: 12, wage: 108, notCompleted: 1 },
+        { id: 'e3', workerId: 'w3', date: today, assigned: 8, output: 7, rate: 10, wage: 70, notCompleted: 1 },
+        { id: 'e4', workerId: 'w1', date: yStr, assigned: 10, output: 10, rate: 10, wage: 100, notCompleted: 0 },
+        { id: 'e5', workerId: 'w2', date: yStr, assigned: 10, output: 8, rate: 12, wage: 96, notCompleted: 2 },
+        { id: 'e6', workerId: 'w3', date: yStr, assigned: 8, output: 6, rate: 10, wage: 60, notCompleted: 2 },
+      ];
+      attendance = [
+        { date: today, workerId: 'w1', status: 'present', otAmount: 50, advance: 100 },
+        { date: today, workerId: 'w2', status: 'present', otAmount: 0, advance: 0 },
+        { date: today, workerId: 'w3', status: 'absent', otAmount: 0, advance: 0 },
+      ];
+      save();
+    }
+
+    function save() {
+      localStorage.setItem('wt_workers', JSON.stringify(workers));
+      localStorage.setItem('wt_entries', JSON.stringify(entries));
+      localStorage.setItem('wt_attendance', JSON.stringify(attendance));
+      localStorage.setItem('wt_users', JSON.stringify(users));
+    }
+
+    function todayStr() {
+      return new Date().toISOString().split('T')[0];
+    }
+
+    function workerById(id) {
+      return workers.find(w => w.id === id);
+    }
+
+    function uid() {
+      return Math.random().toString(36).substr(2, 9);
+    }
+
+    function isHalfDay(s) { return s === 'forenoon' || s === 'afternoon'; }
+    function isWorking(s) { return s === 'present' || s === 'forenoon' || s === 'afternoon'; }
+    function statusColor(s) { return { present: 'var(--accent2)', absent: 'var(--accent3)', forenoon: '#60a5fa', afternoon: '#fb923c' }[s] || 'var(--border)'; }
+
+    // ── INIT ──────────────────────────────────────────────────────────────────
+    // This redundant block was causing conflicts with the STARTUP block at the end.
+    // Combined logic into the STARTUP block.
+
+    function renderAll() {
+      if (!currentUser) return;
+      renderWorkers();
+      renderTodayEntries();
+      buildWorkerFilterChips();
+      renderReport();
+      if (currentUser.role === 'admin') renderUsers();
+
+      // Filter worker count based on supervisor access
+      let visibleWorkerCount = workers.length;
+      if (currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        visibleWorkerCount = workers.filter(w => accessible.includes(w.type || 'daily')).length;
+      }
+      document.getElementById('worker-count-badge').textContent = visibleWorkerCount + ' worker' + (visibleWorkerCount !== 1 ? 's' : '');
+
+      // Apply RBAC UI adjustments
+      const isAdmin = currentUser.role === 'admin';
+      document.querySelectorAll('.admin-only').forEach(el => {
+        if (isAdmin) el.classList.remove('hidden');
+        else el.classList.add('hidden');
+      });
+
+      // Hide/show production tabs based on supervisor access
+      if (currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        document.getElementById('prod-tab-1').style.display = accessible.includes('daily') ? 'flex' : 'none';
+        document.getElementById('prod-tab-2').style.display = accessible.includes('permanent') ? 'flex' : 'none';
+        document.getElementById('prod-tab-3').style.display = accessible.includes('packing') ? 'flex' : 'none';
+        document.getElementById('prod-tab-4').style.display = accessible.includes('other') ? 'flex' : 'none';
+
+        // Show "All" tab only if supervisor has access to multiple productions
+        document.getElementById('prod-tab-all').style.display = accessible.length > 1 ? 'flex' : 'none';
+
+        // Switch to first accessible tab if current tab is not accessible
+        if (!accessible.includes(currentProductionTab) && currentProductionTab !== 'all') {
+          if (accessible.length > 0) {
+            switchProductionTab(accessible[0]);
+          }
+        } else if (currentProductionTab === 'all' && accessible.length === 1) {
+          // If only one production accessible and currently on "all", switch to that production
+          switchProductionTab(accessible[0]);
+        }
+
+        // Hide attendance and entry buttons based on permissions
+        updateActionButtons();
+      } else {
+        // Admin sees all tabs
+        document.getElementById('prod-tab-1').style.display = 'flex';
+        document.getElementById('prod-tab-2').style.display = 'flex';
+        document.getElementById('prod-tab-3').style.display = 'flex';
+        document.getElementById('prod-tab-4').style.display = 'flex';
+        document.getElementById('prod-tab-all').style.display = 'flex';
+      }
+    }
+
+    function updateActionButtons() {
+      console.log('updateActionButtons called, currentUser:', currentUser); // Debug
+      if (!currentUser || currentUser.role === 'admin') {
+        // Admin sees all buttons
+        console.log('Admin detected - showing all buttons'); // Debug
+        document.querySelectorAll('[onclick*="openAttendance"]').forEach(el => el.style.display = '');
+        document.querySelectorAll('[onclick*="openQuickAssignMenu"]').forEach(el => el.style.display = '');
+        document.querySelectorAll('[onclick*="openAddEntry"]').forEach(el => el.style.display = '');
+        return;
+      }
+
+      // For supervisors, check permissions for current production tab
+      if (currentProductionTab === 'all') {
+        // When on "all" tab, show buttons if they have ANY permission across all accessible productions
+        const accessible = getAccessibleProductions();
+        const hasAnyAttendance = accessible.some(prod => hasActionPermission(prod, 'attendance'));
+        const hasAnyPayment = accessible.some(prod => hasActionPermission(prod, 'payment'));
+
+        document.querySelectorAll('[onclick*="openAttendance"]').forEach(el => {
+          el.style.display = hasAnyAttendance ? '' : 'none';
+        });
+        document.querySelectorAll('[onclick*="openQuickAssignMenu"]').forEach(el => {
+          el.style.display = hasAnyPayment ? '' : 'none';
+        });
+        document.querySelectorAll('[onclick*="openAddEntry"]').forEach(el => {
+          el.style.display = hasAnyPayment ? '' : 'none';
+        });
+      } else {
+        // For specific production tab, check that tab's permissions
+        const hasAttendancePerm = hasActionPermission(currentProductionTab, 'attendance');
+        const hasPaymentPerm = hasActionPermission(currentProductionTab, 'payment');
+
+        // Hide/show attendance button
+        document.querySelectorAll('[onclick*="openAttendance"]').forEach(el => {
+          el.style.display = hasAttendancePerm ? '' : 'none';
+        });
+
+        // Hide/show payment-related buttons
+        document.querySelectorAll('[onclick*="openQuickAssignMenu"]').forEach(el => {
+          el.style.display = hasPaymentPerm ? '' : 'none';
+        });
+        document.querySelectorAll('[onclick*="openAddEntry"]').forEach(el => {
+          el.style.display = hasPaymentPerm ? '' : 'none';
+        });
+      }
+    }
+
+    // ── WORKERS ───────────────────────────────────────────────────────────────
+    function showWorkerDetails(wid) {
+      const w = workerById(wid);
+      if (!w) return;
+
+      document.getElementById('w360-name').textContent = w.name + "'s Profile";
+      document.getElementById('w360-title').textContent = w.name;
+      document.getElementById('w360-emoji').textContent = w.emoji || '👷';
+
+      const typeLabels = { daily: 'Prod 1 (Daily)', permanent: 'Prod 2 (Fixed)', packing: 'Prod 3 (Packing)', other: 'Prod 4 (Other)' };
+      document.getElementById('w360-subtitle').textContent = `${w.empId || 'No ID'} · ${typeLabels[w.type || 'daily']}`;
+
+      // Calculate monthly stats
+      const now = new Date();
+      const monthStr = now.toISOString().substr(0, 7);
+      const mEntries = entries.filter(e => e.workerId === wid && e.date.startsWith(monthStr));
+      const mAtt = attendance.filter(a => a.workerId === wid && a.date.startsWith(monthStr));
+
+      const wageEarned = mEntries.reduce((s, e) => s + e.wage, 0);
+      const advanceTotal = mAtt.reduce((s, a) => s + (a.advance || 0), 0);
+
+      document.getElementById('w360-month-wage').textContent = '₹' + wageEarned.toLocaleString();
+      document.getElementById('w360-advance').textContent = '₹' + advanceTotal.toLocaleString();
+
+      // Recent 7 days history
+      const historyCont = document.getElementById('w360-history');
+      historyCont.innerHTML = '';
+
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const ds = d.toISOString().split('T')[0];
+
+        const dayAtt = mAtt.find(a => a.date === ds);
+        const dayEntries = mEntries.filter(e => e.date === ds);
+
+        if (dayAtt || dayEntries.length > 0) {
+          const status = dayAtt ? dayAtt.status : 'N/A';
+          const wage = dayEntries.reduce((s, e) => s + e.wage, 0);
+          const ot = dayAtt ? (dayAtt.otAmount || 0) : 0;
+
+          const item = document.createElement('div');
+          item.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:10px; display:flex; justify-content:space-between; align-items:center;';
+          item.innerHTML = `
+            <div>
+              <div style="font-size:12px; font-weight:700; color:var(--text-bright);">${new Date(ds).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+              <div style="font-size:10px; color:var(--text-muted);">${status.toUpperCase()} ${wage > 0 ? '· Piece:₹' + wage : ''} ${ot > 0 ? '· OT:₹' + ot : ''}</div>
+            </div>
+            <div style="font-size:13px; font-weight:700; color:var(--accent);">₹${wage + ot}</div>
+          `;
+          historyCont.appendChild(item);
+        }
+      }
+
+      if (historyCont.innerHTML === '') {
+        historyCont.innerHTML = '<div style="font-size:11px; color:var(--text-muted); text-align:center; padding:10px;">No recent activity</div>';
+      }
+
+      // Hook up edit button
+      const editBtn = document.getElementById('w360-edit-btn');
+      if (currentUser.role === 'admin') {
+        editBtn.style.display = 'block';
+        editBtn.onclick = () => { closeModal('modal-worker-360'); editWorker(wid); };
+      } else {
+        editBtn.style.display = 'none';
+      }
+
+      document.getElementById('modal-worker-360').classList.add('open');
+    }
+
+    function renderWorkers() {
+      const list = document.getElementById('workers-list');
+      const searchVal = (document.getElementById('worker-search')?.value || '').toLowerCase().trim();
+
+      // Filter workers based on supervisor access
+      let visibleWorkers = workers;
+      if (currentUser && currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        visibleWorkers = workers.filter(w => accessible.includes(w.type || 'daily'));
+      }
+
+      // Filter by search
+      if (searchVal) {
+        visibleWorkers = visibleWorkers.filter(w =>
+          w.name.toLowerCase().includes(searchVal) ||
+          (w.empId || '').toLowerCase().includes(searchVal)
+        );
+      }
+
+      if (visibleWorkers.length === 0) {
+        list.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">${searchVal ? 'No workers match "' + searchVal + '"' : 'No workers in this section.'}</div></div>`;
+        return;
+      }
+      list.innerHTML = visibleWorkers.map((w, index) => {
+        const now = new Date();
+        const monthStr = now.toISOString().substr(0, 7);
+        const pieceTotal = entries.filter(e => e.workerId === w.id && e.date.startsWith(monthStr)).reduce((s, e) => s + e.wage, 0);
+        const monthAtt = attendance.filter(a => a.workerId === w.id && a.date.startsWith(monthStr));
+        const otTotal = monthAtt.reduce((s, a) => s + (a.otAmount || 0), 0);
+        const daysPresent = monthAtt.filter(a => isWorking(a.status)).length;
+        let basePay = pieceTotal;
+        if (w.type === 'permanent') basePay = Math.round(((w.salary || 0) / 30) * daysPresent);
+        const monthGrandTotal = basePay + otTotal;
+        const todayAtt = attendance.find(a => a.workerId === w.id && a.date === todayStr());
+        const todayOT = todayAtt ? (todayAtt.otAmount || 0) : 0;
+        const todayPiece = entries.filter(e => e.workerId === w.id && e.date === todayStr()).reduce((s, e) => s + e.wage, 0);
+        let todayEarned = todayPiece + todayOT;
+        if (w.type === 'permanent' && todayAtt && isWorking(todayAtt.status)) {
+          const mult = isHalfDay(todayAtt.status) ? 0.5 : 1;
+          todayEarned = Math.round((w.salary || 0) / 30 * mult) + todayOT;
+        }
+
+        const typeColors = {
+          daily: { color: 'var(--accent)', bg: 'rgba(240,192,64,0.12)', label: 'Prod 1' },
+          permanent: { color: 'var(--accent2)', bg: 'rgba(74,222,128,0.12)', label: 'Prod 2' },
+          packing: { color: '#60a5fa', bg: 'rgba(96,165,250,0.12)', label: 'Prod 3' },
+          other: { color: '#fb923c', bg: 'rgba(251,146,60,0.12)', label: 'Prod 4' }
+        };
+        const typeInfo = typeColors[w.type || 'daily'];
+        const typeTag = `<span style="font-size:9px;color:${typeInfo.color};text-transform:uppercase;background:${typeInfo.bg};padding:1px 6px;border-radius:4px;font-weight:800;">${typeInfo.label}</span>`;
+        const empInfo = `${w.empId || ''} ${w.phone ? '· ' + w.phone : ''}`;
+        const delay = (index % 10) * 0.05;
+
+        return `
+    <div class="list-item reveal" style="animation-delay: ${delay}s" onclick="showWorkerDetails('${w.id}')">
+      <div class="item-icon">${w.emoji || '👷'}</div>
+      <div class="item-main">
+        <div class="item-title">${w.name} ${typeTag}</div>
+        <div class="item-sub">${empInfo}</div>
+        <div class="item-sub" style="color:var(--accent2); font-weight:700;">₹${monthGrandTotal.toLocaleString()} this month</div>
+      </div>
+      <div class="item-right">
+        <div class="item-value">${todayEarned > 0 ? '₹' + todayEarned.toLocaleString() : '—'}</div>
+        <div class="item-label">today</div>
+      </div>
+    </div>`;
+      }).join('');
+    }
+
+
+    // ── PRODUCTION TAB SWITCHING ──────────────────────────────────────────────
+    function switchProductionTab(type) {
+      // Check if user has access to this production type
+      if (currentUser && currentUser.role === 'supervisor') {
+        if (type === 'all') {
+          // Supervisors can only use "all" if they have multiple productions
+          const accessible = getAccessibleProductions();
+          if (accessible.length <= 1) {
+            showToast('Access denied to this section');
+            return;
+          }
+        } else if (!hasProductionAccess(type)) {
+          showToast('Access denied to this production section');
+          return;
+        }
+      }
+
+      currentProductionTab = type;
+      document.querySelectorAll('#screen-home .report-tab').forEach(t => t.classList.remove('active'));
+      if (type === 'all') document.getElementById('prod-tab-all').classList.add('active');
+      else if (type === 'daily') document.getElementById('prod-tab-1').classList.add('active');
+      else if (type === 'permanent') document.getElementById('prod-tab-2').classList.add('active');
+      else if (type === 'packing') document.getElementById('prod-tab-3').classList.add('active');
+      else if (type === 'other') document.getElementById('prod-tab-4').classList.add('active');
+
+      // Update action buttons based on new tab
+      if (currentUser && currentUser.role === 'supervisor') {
+        updateActionButtons();
+      }
+
+      renderTodayEntries();
+    }
+
+    // ── TODAY ENTRIES ─────────────────────────────────────────────────────────
+    function renderTodayEntries() {
+      const list = document.getElementById('today-entries-list');
+      const today = todayStr();
+      const todayEntries = entries.filter(e => e.date === today);
+      const todayAtt = attendance.filter(a => a.date === today);
+
+      const workerDailyMap = {};
+
+      // 1. Process Attendance first to establish worker presence and base salary/OT/Adv
+      todayAtt.forEach(a => {
+        const w = workerById(a.workerId);
+        if (!w) return;
+
+        // Filter by production tab
+        if (currentProductionTab !== 'all') {
+          if (currentProductionTab !== 'other' && (w.type || 'daily') !== currentProductionTab) return;
+        }
+
+        if (!workerDailyMap[a.workerId]) {
+          workerDailyMap[a.workerId] = {
+            worker: w,
+            piece: 0,
+            ot: a.otAmount,
+            adv: a.advance,
+            status: a.status,
+            entries: [],
+            baseSalary: 0
+          };
+        } else {
+          workerDailyMap[a.workerId].ot += a.otAmount;
+          workerDailyMap[a.workerId].adv += a.advance;
+          workerDailyMap[a.workerId].status = a.status;
+        }
+
+        // Calculate base salary for permanent staff
+        if (w.type === 'permanent') {
+          const isPresent = isWorking(a.status);
+          const halfDay = isHalfDay(a.status);
+          if (isPresent) {
+            workerDailyMap[a.workerId].baseSalary = Math.round(((w.salary || 0) / 30) * (halfDay ? 0.5 : 1));
+          }
+        }
+      });
+
+      // 2. Process Entries and add to the worker's activity
+      todayEntries.forEach(e => {
+        const w = workerById(e.workerId);
+        if (!w) return;
+
+        // Filter by production tab
+        if (currentProductionTab !== 'all') {
+          if (currentProductionTab === 'other') {
+            if (!e.workDesc) return;
+          } else {
+            if ((w.type || 'daily') !== currentProductionTab || !!e.workDesc) return;
+          }
+        }
+
+        if (!workerDailyMap[e.workerId]) {
+          workerDailyMap[e.workerId] = {
+            worker: w,
+            piece: e.wage,
+            ot: 0,
+            adv: 0,
+            status: 'present',
+            entries: [e],
+            baseSalary: 0
+          };
+        } else {
+          workerDailyMap[e.workerId].piece += e.wage;
+          workerDailyMap[e.workerId].entries.push(e);
+        }
+      });
+
+      // Summary Calculations
+      let totalKg = 0;
+      let totalNetWage = 0;
+      const workerIds = Object.keys(workerDailyMap);
+
+      workerIds.forEach(wid => {
+        const d = workerDailyMap[wid];
+        const w = d.worker;
+
+        // Only count kg for daily, permanent workers (not packing/other)
+        if (w.type === 'daily' || w.type === 'permanent' || !w.type) {
+          d.entries.forEach(e => {
+            if (!e.workDesc) totalKg += e.output;
+          });
+        }
+        totalNetWage += (d.baseSalary + d.piece + d.ot - d.adv);
+      });
+
+      const totalW = workers.length;
+      const presentW = workerIds.length;
+      
+      // Update Tab Counter
+      const countBadge = document.getElementById('worker-count-badge');
+      if (countBadge) countBadge.textContent = `${presentW} / ${totalW} workers`;
+
+      // Update Dashboard Stats
+      try {
+        const dashW = document.getElementById('dash-active-workers');
+        if (dashW) dashW.textContent = `${presentW} / ${totalW}`;
+
+        const dashOut = document.getElementById('dash-total-kg');
+        if (dashOut) dashOut.textContent = totalKg > 0 ? totalKg.toLocaleString() + ' kg' : '0';
+
+        const dashWage = document.getElementById('dash-total-wage');
+        if (dashWage) dashWage.innerHTML = `<span style="font-size: 14px; color: var(--accent2);">₹</span>${totalNetWage.toLocaleString()}`;
+      } catch (err) {
+        console.error('Dash Error:', err);
+      }
+
+      if (workerIds.length === 0) {
+        list.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No activity today.<br>Tap + Entry to start.</div></div>`;
+        return;
+      }
+
+      list.innerHTML = workerIds.map((wid, index) => {
+        const d = workerDailyMap[wid];
+        const w = d.worker;
+        const delay = (index % 10) * 0.05;
+        const net = d.baseSalary + d.piece + d.ot - d.adv;
+
+        // Group activity descriptions
+        let activityHtml = '';
+        if (w.type === 'permanent') {
+          const halfDay = isHalfDay(d.status);
+          activityHtml += `<div class="item-sub">Fixed Salary: ${halfDay ? 'Half Day' : 'Present'}</div>`;
+        } else if (d.status === 'absent') {
+          activityHtml += `<div class="item-sub" style="color:var(--danger)">Absent</div>`;
+        }
+
+        d.entries.forEach(e => {
+          if (e.workDesc) {
+            activityHtml += `<div class="item-sub" style="color:var(--info)">${e.workDesc} (₹${e.wage})</div>`;
+          } else if (w.type === 'packing') {
+            activityHtml += `<div class="item-sub">${e.output || e.assigned} items @ ₹${e.rate}</div>`;
+          } else {
+            activityHtml += `<div class="item-sub">${e.output}/${e.assigned} kg (${e.assigned - e.output}kg bal)</div>`;
+          }
+        });
+
+        if (d.ot > 0 || d.adv > 0) {
+          activityHtml += `<div style="font-size:10px; color:var(--text-muted); margin-top:4px; font-family:var(--mono);">OT:₹${d.ot} · Adv:₹${d.adv}</div>`;
+        }
+
+        // Color coding based on primary activity
+        let statusCol = 'var(--accent)';
+        if (d.status === 'absent') statusCol = 'var(--danger)';
+        else if (d.entries.some(e => e.workDesc)) statusCol = 'var(--info)';
+        else if (w.type === 'permanent') statusCol = 'var(--accent2)';
+
+        return `
+          <div class="list-item clickable reveal" style="animation-delay: ${delay}s;" onclick="editWorkForToday('${wid}')">
+            <div class="item-icon" style="border-color:${statusCol};">
+               <div style="width: 10px; height: 10px; background: ${statusCol}; border-radius: 50%; box-shadow: 0 0 10px ${statusCol}40;"></div>
+            </div>
+            <div class="item-main">
+              <div class="item-title">
+                ${w.name}
+                <span style="font-size:9px; font-weight:800; padding:2px 6px; border-radius:4px; border:1px solid ${statusColor(d.status || 'present')}; color:${statusColor(d.status || 'present')};">${(d.status || 'present').toUpperCase()}</span>
+              </div>
+              <div style="font-size:10px; color:var(--text-muted); font-family:var(--mono); margin-top:-2px;">${w.empId || ''}</div>
+              <div class="item-sub">${activityHtml}</div>
+            </div>
+            <div class="item-right">
+              <div class="item-value" style="color:var(--accent2);">₹${net.toLocaleString()}</div>
+              <div style="font-size:8px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-top:4px;">Tap to update</div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function deleteEntry(id) {
+      if (!id) return;
+      if (confirm('Delete this work entry forever?')) {
+        entries = entries.filter(e => e.id !== id);
+        save();
+        renderAll();
+        showToast('Entry deleted');
+      }
+    }
+
+    function editWorkForToday(wid) {
+      const today = todayStr();
+      const entry = entries.find(e => e.workerId === wid && e.date === today);
+      if (entry) {
+        editEntry(entry.id);
+      } else {
+        openAddEntry();
+        document.getElementById('e-worker').value = wid;
+        // Trigger the manual worker update logic
+        const event = new Event('change');
+        document.getElementById('e-worker').dispatchEvent(event);
+      }
+    }
+
+    function syncKgFromAssigned() {
+      const m = parseFloat(document.getElementById('e-assigned-morning').value) || 0;
+      const a = parseFloat(document.getElementById('e-assigned-afternoon').value) || 0;
+      const total = m + a;
+      const output = parseFloat(document.getElementById('e-output-kg').value) || 0;
+      document.getElementById('e-not-completed').value = Math.max(0, total - output);
+      calcPreview();
+    }
+
+    function syncKgFromOutput() {
+      const m = parseFloat(document.getElementById('e-assigned-morning').value) || 0;
+      const a = parseFloat(document.getElementById('e-assigned-afternoon').value) || 0;
+      const total = m + a;
+      const output = parseFloat(document.getElementById('e-output-kg').value) || 0;
+      document.getElementById('e-not-completed').value = Math.max(0, total - output);
+      calcPreview();
+    }
+
+    function syncKgFromBalance() {
+      const m = parseFloat(document.getElementById('e-assigned-morning').value) || 0;
+      const a = parseFloat(document.getElementById('e-assigned-afternoon').value) || 0;
+      const total = m + a;
+      const balance = parseFloat(document.getElementById('e-not-completed').value) || 0;
+      document.getElementById('e-output-kg').value = Math.max(0, total - balance);
+      calcPreview();
+    }
+
+    // ── REPORT ────────────────────────────────────────────────────────────────
+    // ── REPORT STATE ──────────────────────────────────────────────────────────
+    let reportState = {
+      fromDate: todayStr(),
+      toDate: todayStr(),
+      workerFilter: 'all', // 'all' or workerId
+      productionFilter: 'all', // 'all', 'daily', 'permanent', 'packing', 'other'
+      label: 'Today'
+    };
+
+    function switchReportProductionTab(type) {
+      reportState.productionFilter = type;
+      document.querySelectorAll('#screen-reports .report-tab').forEach(t => t.classList.remove('active'));
+      if (type === 'all') document.getElementById('report-prod-all').classList.add('active');
+      else if (type === 'daily') document.getElementById('report-prod-1').classList.add('active');
+      else if (type === 'permanent') document.getElementById('report-prod-2').classList.add('active');
+      else if (type === 'packing') document.getElementById('report-prod-3').classList.add('active');
+      else if (type === 'other') document.getElementById('report-prod-4').classList.add('active');
+      renderReport();
+    }
+
+    function applyQuick(type, el) {
+      document.querySelectorAll('.quick-chip').forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+      const now = new Date();
+      const box = document.getElementById('custom-range-box');
+
+      if (type === 'custom') {
+        box.style.display = 'block';
+        if (!document.getElementById('r-from').value) {
+          document.getElementById('r-from').value = todayStr();
+          document.getElementById('r-to').value = todayStr();
+        }
+        applyCustomRange();
+        return;
+      }
+      box.style.display = 'none';
+
+      let from, to, label;
+      if (type === 'today') {
+        from = to = todayStr();
+        label = 'Today';
+      } else if (type === 'week') {
+        const start = new Date(now); start.setDate(now.getDate() - now.getDay());
+        from = start.toISOString().split('T')[0];
+        to = todayStr();
+        label = 'This Week';
+      } else if (type === 'month') {
+        from = now.toISOString().substr(0, 7) + '-01';
+        to = todayStr();
+        label = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+      }
+
+      reportState.fromDate = from;
+      reportState.toDate = to;
+      reportState.label = label;
+      document.getElementById('period-badge').textContent = label;
+      renderReport();
+    }
+
+    function applyCustomRange() {
+      const from = document.getElementById('r-from').value;
+      const to = document.getElementById('r-to').value;
+      if (!from || !to) return;
+      if (from > to) { showToast('From date must be before To date'); return; }
+      const fmtDate = d => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      reportState.fromDate = from;
+      reportState.toDate = to;
+      reportState.label = fmtDate(from) + ' – ' + fmtDate(to);
+      document.getElementById('period-badge').textContent = reportState.label;
+      renderReport();
+    }
+
+    function onWorkerFilterChange(wid) {
+      reportState.workerFilter = wid;
+      renderReport();
+    }
+
+    function buildWorkerFilterChips() {
+      const sel = document.getElementById('worker-filter-select');
+      const current = sel.value;
+
+      // Filter workers based on supervisor access
+      let visibleWorkers = workers;
+      if (currentUser && currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        visibleWorkers = workers.filter(w => accessible.includes(w.type || 'daily'));
+      }
+
+      sel.innerHTML = '<option value="all">All Workers</option>' +
+        visibleWorkers.map(w => `<option value="${w.id}">${w.emoji || ''} ${w.name}</option>`).join('');
+      // restore selection if still valid
+      if (current && [...sel.options].some(o => o.value === current)) sel.value = current;
+      else sel.value = reportState.workerFilter;
+    }
+
+    function renderReport() {
+      const content = document.getElementById('report-content');
+      const { fromDate, toDate, workerFilter, productionFilter } = reportState;
+
+      let filtered = entries.filter(e => e.date >= fromDate && e.date <= toDate);
+      let attFiltered = attendance.filter(a => a.date >= fromDate && a.date <= toDate);
+      if (workerFilter !== 'all') {
+        filtered = filtered.filter(e => e.workerId === workerFilter);
+        attFiltered = attFiltered.filter(a => a.workerId === workerFilter);
+      }
+
+      // Filter by production type
+      if (productionFilter !== 'all') {
+        filtered = filtered.filter(e => {
+          if (productionFilter === 'other') return !!e.workDesc;
+          const w = workerById(e.workerId);
+          return w && (w.type || 'daily') === productionFilter && !e.workDesc;
+        });
+        attFiltered = attFiltered.filter(a => {
+          const w = workerById(a.workerId);
+          // Attendance is usually tied to the worker's primary type
+          // If filtering by "Other", we don't usually filter attendance unless it's specific to that task
+          // For simplicity, if productionFilter is "other", we show no base attendance rows (only work entries)
+          if (productionFilter === 'other') return false;
+          return w && (w.type || 'daily') === productionFilter;
+        });
+      }
+
+      // Filter by supervisor access
+      if (currentUser && currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        filtered = filtered.filter(e => {
+          const w = workerById(e.workerId);
+          // Supervisors can see "Other Work" entries if they have access to "other" (prod4)
+          if (e.workDesc) return accessible.includes('other');
+          return w && accessible.includes(w.type || 'daily');
+        });
+        attFiltered = attFiltered.filter(a => {
+          const w = workerById(a.workerId);
+          return w && accessible.includes(w.type || 'daily');
+        });
+      }
+
+      const workerMap = {};
+      workers.forEach(w => {
+        // Check supervisor access
+        if (currentUser && currentUser.role === 'supervisor') {
+          const accessible = getAccessibleProductions();
+          if (!accessible.includes(w.type || 'daily')) return;
+        }
+
+        // Check production filter
+        if (productionFilter !== 'all' && (w.type || 'daily') !== productionFilter) return;
+
+        if (workerFilter === 'all' || w.id === workerFilter) {
+          workerMap[w.id] = { kg: 0, assigned: 0, wage: 0, ot: 0, advance: 0, net: 0, days: 0, daily: {}, name: w.name, emoji: w.emoji };
+        }
+      });
+
+      filtered.forEach(e => {
+        if (!workerMap[e.workerId]) return;
+        workerMap[e.workerId].kg += e.output;
+        workerMap[e.workerId].assigned += e.assigned;
+        workerMap[e.workerId].wage += e.wage;
+        if (!workerMap[e.workerId].daily[e.date]) workerMap[e.workerId].daily[e.date] = { piece: 0, ot: 0, adv: 0, output: 0, assigned: 0, net: 0, status: 'present' };
+        workerMap[e.workerId].daily[e.date].piece += e.wage;
+        workerMap[e.workerId].daily[e.date].output += e.output;
+        workerMap[e.workerId].daily[e.date].assigned += e.assigned;
+      });
+
+      attFiltered.forEach(a => {
+        if (!workerMap[a.workerId]) return;
+        workerMap[a.workerId].ot += a.otAmount;
+        workerMap[a.workerId].advance += a.advance;
+        if (!workerMap[a.workerId].daily[a.date]) workerMap[a.workerId].daily[a.date] = { piece: 0, ot: 0, adv: 0, output: 0, assigned: 0, net: 0, status: 'present' };
+        workerMap[a.workerId].daily[a.date].ot += a.otAmount;
+        workerMap[a.workerId].daily[a.date].adv += a.advance;
+        workerMap[a.workerId].daily[a.date].status = a.status;
+      });
+
+      let totalWage = 0, totalKg = 0, totalWorkersActive = 0, totalDaysActive = new Set();
+
+      Object.keys(workerMap).forEach(wid => {
+        let w = workerMap[wid];
+        const workerInfo = workerById(wid);
+
+        const activeDates = new Set([
+          ...Object.keys(w.daily),
+          ...attFiltered.filter(a => a.workerId === wid && isWorking(a.status)).map(a => a.date)
+        ]);
+        w.days = activeDates.size;
+
+        if (workerInfo.type === 'permanent') {
+          const daysPresent = attFiltered.filter(a => a.workerId === wid && isWorking(a.status)).reduce((acc, a) => {
+            return acc + (isHalfDay(a.status) ? 0.5 : 1);
+          }, 0);
+          const dailySalary = (workerInfo.salary || 0) / 30;
+          w.wage += Math.round(dailySalary * daysPresent);
+        }
+
+        w.net = w.wage + w.ot - w.advance;
+        if (w.days === 0 && w.ot === 0 && w.advance === 0 && w.wage === 0) {
+          delete workerMap[wid];
+        } else {
+          totalWage += w.net;
+          totalKg += w.kg;
+          totalWorkersActive++;
+          Object.keys(w.daily).forEach(d => {
+            totalDaysActive.add(d);
+            const dayData = w.daily[d];
+            if (workerInfo.type === 'permanent') {
+              const att = attFiltered.find(a => a.workerId === wid && a.date === d);
+              if (att && isWorking(att.status)) {
+                const mult = isHalfDay(att.status) ? 0.5 : 1;
+                dayData.piece += Math.round((workerInfo.salary || 0) / 30 * mult);
+              }
+            }
+            dayData.net = dayData.piece + dayData.ot - dayData.adv;
+          });
+        }
+      });
+
+      if (totalWorkersActive === 0) {
+        content.innerHTML = `<div class="empty" style="margin-top:20px;"><div class="empty-icon">📊</div><div class="empty-text">No entries or attendance<br>for this period.</div></div>`;
+        return;
+      }
+
+      const totalDays = totalDaysActive.size;
+      const avgWagePerDay = totalDays > 0 ? Math.round(totalWage / totalDays) : 0;
+
+      // Build full data table
+      let totalAssigned = 0, totalOutput = 0, totalPiece = 0, totalOT = 0, totalAdv = 0;
+
+      const tableRows = Object.entries(workerMap).map(([wid, data]) => {
+        const workerInfo = workerById(wid);
+        const eff = data.assigned > 0 ? Math.round((data.kg / data.assigned) * 100) : 0;
+        const effBadge = data.assigned > 0
+          ? `<span style="font-size:9px;background:${eff >= 80 ? 'rgba(74,222,128,0.15)' : 'rgba(240,192,64,0.15)'};color:${eff >= 80 ? 'var(--accent2)' : 'var(--accent)'};padding:1px 5px;border-radius:4px;">${eff}%</span>`
+          : '';
+        const empIdStr = workerInfo.empId ? `<div style="font-size:9px;color:var(--text-muted);font-family:var(--mono);">${workerInfo.empId}</div>` : '';
+
+        totalAssigned += data.assigned;
+        totalOutput += data.kg;
+        totalPiece += data.wage;
+        totalOT += data.ot;
+        totalAdv += data.advance;
+
+        const dailyRows = Object.keys(data.daily).sort().map(d => {
+          const dLabel = new Date(d).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+          const dd = data.daily[d];
+          const statusDot = dd.status === 'absent' ? `<span style="color:var(--accent3)">✕</span>` : dd.status === 'forenoon' ? `<span style="color:#60a5fa">FN</span>` : dd.status === 'afternoon' ? `<span style="color:#fb923c">AN</span>` : `<span style="color:var(--accent2)">✓</span>`;
+          return `<tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);">
+        <td style="padding:5px 8px;">${statusDot} ${dLabel}</td>
+        <td style="padding:5px 8px;text-align:right;font-family:var(--mono);">${dd.assigned > 0 ? dd.assigned : '—'}</td>
+        <td style="padding:5px 8px;text-align:right;font-family:var(--mono);">${dd.output > 0 ? dd.output : '—'}</td>
+        <td style="padding:5px 8px;text-align:right;font-family:var(--mono);">₹${dd.piece.toLocaleString()}</td>
+        <td style="padding:5px 8px;text-align:right;font-family:var(--mono);">${dd.ot > 0 ? '₹' + dd.ot.toLocaleString() : '—'}</td>
+        <td style="padding:5px 8px;text-align:right;font-family:var(--mono);">${dd.adv > 0 ? '₹' + dd.adv.toLocaleString() : '—'}</td>
+        <td style="padding:5px 8px;text-align:right;font-family:var(--mono);color:var(--accent);font-weight:700;">₹${dd.net.toLocaleString()}</td>
+      </tr>`;
+        }).join('');
+
+        return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin:0 16px 12px;overflow:hidden;box-shadow:var(--shadow);">
+      <div style="padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer;background:var(--surface-raised);" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+        <div style="font-size:22px; width:40px; height:40px; background:var(--surface); border-radius:12px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border);">${data.emoji || '👷'}</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:15px;font-weight:700;color:var(--text-bright); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${data.name}</div>
+          <div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);margin-top:2px;">${data.kg}/${data.assigned} kg · ${data.days} day${data.days > 1 ? 's' : ''}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--accent);">₹${data.net.toLocaleString()}</div>
+          <div style="font-size:10px;color:var(--text-muted);">tap to expand</div>
+        </div>
+      </div>
+      <div style="display:none;overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;min-width:420px;">
+          <thead>
+            <tr style="background:rgba(240,192,64,0.08);font-size:9px;text-transform:uppercase;color:var(--text-muted);font-family:var(--mono);">
+              <th style="padding:6px 8px;text-align:left;">Date</th>
+              <th style="padding:6px 8px;text-align:right;">Assigned</th>
+              <th style="padding:6px 8px;text-align:right;">Output</th>
+              <th style="padding:6px 8px;text-align:right;">Wage</th>
+              <th style="padding:6px 8px;text-align:right;">OT</th>
+              <th style="padding:6px 8px;text-align:right;">Advance</th>
+              <th style="padding:6px 8px;text-align:right;">Net</th>
+            </tr>
+          </thead>
+          <tbody>${dailyRows}</tbody>
+          <tfoot>
+            <tr style="background:rgba(240,192,64,0.12);font-weight:700;font-size:12px;">
+              <td style="padding:8px;color:var(--accent);font-family:var(--mono);">TOTAL</td>
+              <td style="padding:8px;text-align:right;font-family:var(--mono);">${data.assigned}</td>
+              <td style="padding:8px;text-align:right;font-family:var(--mono);">${data.kg}</td>
+              <td style="padding:8px;text-align:right;font-family:var(--mono);">₹${data.wage.toLocaleString()}</td>
+              <td style="padding:8px;text-align:right;font-family:var(--mono);">₹${data.ot.toLocaleString()}</td>
+              <td style="padding:8px;text-align:right;font-family:var(--mono);">₹${data.advance.toLocaleString()}</td>
+              <td style="padding:8px;text-align:right;font-family:var(--mono);color:var(--accent);font-size:14px;">₹${data.net.toLocaleString()}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>`;
+      }).join('');
+
+      content.innerHTML = `
+    <div style="margin:0 16px 12px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:16px;font-weight:800;font-family:var(--mono);color:var(--accent);">${totalWorkersActive}</div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:2px;font-family:var(--mono);">WORKERS</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:16px;font-weight:800;font-family:var(--mono);color:var(--accent);">${totalOutput}</div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:2px;font-family:var(--mono);">KG OUT</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:16px;font-weight:800;font-family:var(--mono);color:var(--accent);">${totalAssigned}</div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:2px;font-family:var(--mono);">KG ASSIGNED</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:16px;font-weight:800;font-family:var(--mono);color:var(--accent);">${totalDays}</div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:2px;font-family:var(--mono);">DAYS</div>
+      </div>
+    </div>
+    ${tableRows}
+    <div style="margin:0 16px 16px;background:linear-gradient(135deg,#1a2038,#1f2a1a);border:1px solid var(--accent);border-radius:var(--radius);overflow:hidden;">
+      <div style="padding:8px 12px;font-size:9px;font-family:var(--mono);color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border);">Grand Total Summary</div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+        <thead>
+          <tr style="font-size:9px;text-transform:uppercase;color:var(--text-muted);font-family:var(--mono);">
+            <th style="padding:6px 8px;text-align:center;width:12%;">Workers</th>
+            <th style="padding:6px 8px;text-align:right;width:14%;">Assigned</th>
+            <th style="padding:6px 8px;text-align:right;width:14%;">Output</th>
+            <th style="padding:6px 8px;text-align:right;width:15%;">Piece/Sal</th>
+            <th style="padding:6px 8px;text-align:right;width:13%;">OT</th>
+            <th style="padding:6px 8px;text-align:right;width:14%;">Advance</th>
+            <th style="padding:6px 8px;text-align:right;width:18%;">NET</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="font-weight:800;font-family:var(--mono);">
+            <td style="padding:10px 8px;font-size:16px;color:var(--accent);text-align:center;">${totalWorkersActive}</td>
+            <td style="padding:10px 8px;text-align:right;font-size:13px;">${totalAssigned} kg</td>
+            <td style="padding:10px 8px;text-align:right;font-size:13px;">${totalOutput} kg</td>
+            <td style="padding:10px 8px;text-align:right;font-size:13px;">₹${totalPiece}</td>
+            <td style="padding:10px 8px;text-align:right;font-size:13px;">₹${totalOT}</td>
+            <td style="padding:10px 8px;text-align:right;font-size:13px;">₹${totalAdv}</td>
+            <td style="padding:10px 8px;text-align:right;font-size:20px;color:var(--accent);">₹${totalWage}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+    }
+
+    function exportReportPDF(autoCloud = false) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF('p', 'mm', 'a4');
+
+      const { fromDate, toDate, workerFilter, productionFilter, label } = reportState;
+      let filtered = entries.filter(e => e.date >= fromDate && e.date <= toDate);
+      let attFiltered = attendance.filter(a => a.date >= fromDate && a.date <= toDate);
+
+      if (workerFilter !== 'all') {
+        filtered = filtered.filter(e => e.workerId === workerFilter);
+        attFiltered = attFiltered.filter(a => a.workerId === workerFilter);
+      }
+
+      if (productionFilter !== 'all') {
+        filtered = filtered.filter(e => {
+          if (productionFilter === 'other') return !!e.workDesc;
+          const w = workerById(e.workerId);
+          return w && (w.type || 'daily') === productionFilter && !e.workDesc;
+        });
+        attFiltered = attFiltered.filter(a => {
+          const w = workerById(a.workerId);
+          if (productionFilter === 'other') return false;
+          return w && (w.type || 'daily') === productionFilter;
+        });
+      }
+
+      const workerMap = {};
+      filtered.forEach(e => {
+        if (!workerMap[e.workerId]) workerMap[e.workerId] = { wage: 0, ot: 0, advance: 0, net: 0, output: 0, assigned: 0 };
+        workerMap[e.workerId].wage += e.wage;
+        workerMap[e.workerId].output += e.output;
+        workerMap[e.workerId].assigned += e.assigned;
+      });
+      attFiltered.forEach(a => {
+        if (!workerMap[a.workerId]) workerMap[a.workerId] = { wage: 0, ot: 0, advance: 0, net: 0, output: 0, assigned: 0 };
+        workerMap[a.workerId].ot += a.otAmount;
+        workerMap[a.workerId].advance += a.advance;
+      });
+
+      if (Object.keys(workerMap).length === 0) { showToast('No data to export'); return; }
+
+      // --- DARK HEADER SECTION ---
+      doc.setFillColor(13, 17, 23); // #0D1117
+      doc.rect(0, 0, 210, 45, 'F');
+
+      // WageTrack Logo/Title
+      doc.setTextColor(240, 192, 64); // #F0C040 (Gold)
+      doc.setFontSize(24);
+      doc.setFont("helvetica", "bold");
+      doc.text("WageTrack", 15, 22);
+
+      // Subtitle
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text("Professional Wage Report v2.1", 15, 30);
+
+      // Top Right Info
+      doc.setFontSize(8);
+      doc.setTextColor(139, 148, 158); // Muted color
+      doc.text(`Date: ${new Date().toISOString().split('T')[0]}`, 195, 18, { align: 'right' });
+      doc.text(`Site: North Block Site`, 195, 25, { align: 'right' });
+      doc.text(`Supervisor: ${currentUser.name || 'A. Kumar'}`, 195, 32, { align: 'right' });
+
+      // Gold Accent Line
+      doc.setDrawColor(240, 192, 64);
+      doc.setLineWidth(1);
+      doc.line(15, 38, 195, 38);
+
+      const tableData = [];
+      let totalAssigned = 0, totalOutput = 0, totalWage = 0, totalOT = 0, totalAdv = 0;
+
+      Object.entries(workerMap).forEach(([wid, data]) => {
+        const w = workerById(wid);
+        if (!w) return;
+
+        if (w.type === 'permanent') {
+          const daysPresent = attFiltered.filter(a => a.workerId === wid && isWorking(a.status)).reduce((acc, a) => acc + (isHalfDay(a.status) ? 0.5 : 1), 0);
+          data.wage += Math.round(((w.salary || 0) / 30) * daysPresent);
+        }
+
+        const net = data.wage + data.ot - data.advance;
+        totalAssigned += data.assigned;
+        totalOutput += data.output;
+        totalWage += data.wage;
+        totalOT += data.ot;
+        totalAdv += data.advance;
+
+        tableData.push([
+          w.name,
+          w.role || 'Worker',
+          data.assigned,
+          data.output,
+          data.wage.toLocaleString(),
+          data.ot.toLocaleString(),
+          data.advance.toLocaleString(),
+          net.toLocaleString()
+        ]);
+      });
+
+      // --- MAIN TABLE (Matching Screenshot) ---
+      doc.autoTable({
+        startY: 55,
+        head: [['Name', 'Role', 'Assigned', 'Output', 'Wage', 'OT', 'Advance', 'Net']],
+        body: tableData,
+        theme: 'plain',
+        headStyles: {
+          fillColor: [13, 17, 23],
+          textColor: [240, 192, 64],
+          fontStyle: 'bold',
+          fontSize: 10,
+          halign: 'left'
+        },
+        styles: {
+          fontSize: 9,
+          cellPadding: 4,
+          textColor: [48, 54, 61],
+          lineColor: [240, 240, 240],
+          lineWidth: 0.1
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', textColor: [0, 0, 0] },
+          7: { fontStyle: 'bold', textColor: [0, 0, 0] }
+        }
+      });
+
+      // --- GRAND TOTAL CARD ---
+      let finalY = doc.lastAutoTable.finalY + 15;
+      if (finalY > 220) { doc.addPage(); finalY = 20; }
+
+      // Outer Card shadow effect (Light Gray background first)
+      doc.setFillColor(248, 249, 250);
+      doc.rect(12, finalY - 2, 186, 50, 'F');
+
+      // Card Background (White)
+      doc.setFillColor(255, 255, 255);
+      doc.rect(15, finalY, 180, 45, 'F');
+
+      // Gold Left Border Accent
+      doc.setFillColor(240, 192, 64);
+      doc.rect(15, finalY, 3, 45, 'F');
+
+      // Card Title
+      doc.setFontSize(11);
+      doc.setTextColor(13, 17, 23);
+      doc.setFont("helvetica", "bold");
+      doc.text("GRAND TOTAL SUMMARY", 24, finalY + 10);
+
+      // Horizontal Divider
+      doc.setDrawColor(230, 230, 230);
+      doc.setLineWidth(0.2);
+      doc.line(24, finalY + 14, 185, finalY + 14);
+
+      // Data Grid
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      const labels = ["WORKERS", "ASSIGNED", "OUTPUT", "WAGE", "OT", "ADVANCE"];
+      const xPos = [24, 50, 80, 110, 140, 170];
+      labels.forEach((l, i) => doc.text(l, xPos[i], finalY + 22));
+
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "bold");
+      const vals = [
+        Object.keys(workerMap).length.toString(),
+        totalAssigned.toString(),
+        totalOutput.toString(),
+        totalWage.toLocaleString(),
+        totalOT.toLocaleString(),
+        totalAdv.toLocaleString()
+      ];
+      vals.forEach((v, i) => doc.text(v, xPos[i], finalY + 30));
+
+      // Net Payable Footer
+      doc.setFillColor(13, 17, 23); // Dark bar
+      doc.rect(15, finalY + 35, 180, 10, 'F');
+
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text("TOTAL NET PAYABLE", 24, finalY + 41.5);
+
+      doc.setFontSize(12);
+      doc.setTextColor(240, 192, 64); // Gold Amount
+      const totalNet = totalWage + totalOT - totalAdv;
+      doc.text(`Rs. ${totalNet.toLocaleString()}`, 190, finalY + 41.5, { align: 'right' });
+
+      if (autoCloud) {
+        const pdfDataUri = doc.output('datauristring');
+        sendCloudEmail({
+          subject: `WageTrack Report: ${label} (${new Date().toLocaleDateString()})`,
+          body: `Automatic Report Backup for period: ${label}.\n\nSent by: ${currentUser.username}`,
+          filename: `Report_${label.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`,
+          base64Data: pdfDataUri,
+          jsonContent: { workers, entries, attendance }
+        });
+      } else {
+        saveAndSharePDF(doc, `WageTrack_Report.pdf`);
+      }
+    }
+
+
+
+    // ── MODALS ────────────────────────────────────────────────────────────────
+    const emojis = ['👷', '🧑‍🏭', '👩‍🏭', '🧑‍🌾', '👩‍🌾', '🧑', '👩', '🧑‍💼'];
+    let editingWorkerId = null;
+
+    function openAddWorker() {
+      if (currentUser.role !== 'admin') {
+        showToast('Permission Denied: Admins only');
+        return;
+      }
+      editingWorkerId = null;
+      document.getElementById('modal-worker').querySelector('.modal-title').textContent = 'Add Worker';
+      // Auto-generate employee ID
+      const nextNum = String(workers.length + 1).padStart(3, '0');
+      document.getElementById('w-empid').value = `EMP${nextNum}`;
+      document.getElementById('w-phone').value = '';
+      document.getElementById('w-name').value = '';
+      document.getElementById('w-type').value = 'daily';
+      document.getElementById('w-salary').value = '';
+      document.getElementById('w-ot-rate').value = '';
+      document.getElementById('w-ot-fixed').value = '';
+      document.getElementById('w-salary-group').classList.add('hidden');
+      document.getElementById('modal-worker').classList.add('open');
+    }
+
+    function editWorker(workerId) {
+      if (currentUser.role !== 'admin') {
+        showToast('Permission Denied: Admins only');
+        return;
+      }
+      const w = workerById(workerId);
+      if (!w) return;
+
+      editingWorkerId = workerId;
+      document.getElementById('modal-worker').querySelector('.modal-title').textContent = 'Edit Worker';
+      document.getElementById('w-empid').value = w.empId || '';
+      document.getElementById('w-phone').value = w.phone || '';
+      document.getElementById('w-name').value = w.name || '';
+      document.getElementById('w-type').value = w.type || 'daily';
+      document.getElementById('w-salary').value = w.salary || '';
+      document.getElementById('w-ot-rate').value = w.otRate || '';
+      document.getElementById('w-ot-fixed').value = w.otFixed || '';
+
+      toggleWorkerTypeFields(w.type || 'daily');
+      document.getElementById('modal-worker').classList.add('open');
+    }
+
+    function openAddEntry() {
+      // Check if user has payment permission for current production tab
+      if (currentUser.role === 'supervisor' && !hasActionPermission(currentProductionTab, 'payment')) {
+        showToast('Permission Denied: No payment access for this section');
+        return;
+      }
+
+      document.getElementById('e-id').value = '';
+      document.getElementById('entry-modal-title').textContent = 'Add Daily Entry';
+
+      // Filter workers by current production tab if not on "all"
+      let availableWorkers = workers;
+      if (currentProductionTab !== 'all') {
+        if (currentProductionTab === 'other') {
+          // Production 4: Show ALL workers
+          availableWorkers = workers;
+        } else {
+          availableWorkers = workers.filter(w => (w.type || 'daily') === currentProductionTab);
+        }
+      }
+
+      // Further filter by supervisor access
+      if (currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        if (currentProductionTab !== 'other') {
+          availableWorkers = availableWorkers.filter(w => accessible.includes(w.type || 'daily'));
+        }
+      }
+
+      if (availableWorkers.length === 0) {
+        showToast('No workers in this production type!');
+        return;
+      }
+
+      const sel = document.getElementById('e-worker');
+      sel.innerHTML = availableWorkers.map(w => {
+        const typeLabel = { daily: 'Prod 1', permanent: 'Prod 2', packing: 'Prod 3', other: 'Prod 4' }[w.type || 'daily'];
+        return `<option value="${w.id}">${w.name} (${typeLabel})</option>`;
+      }).join('');
+
+      // Helper to update fields and auto-fill rate
+      const updateFieldsForWorker = (workerId) => {
+        const w = workerById(workerId);
+        const isSup = currentUser.role === 'supervisor';
+
+        if (currentProductionTab === 'other') {
+          toggleEntryFields('other');
+        } else if (w) {
+          toggleEntryFields(w.type || 'daily');
+        }
+
+        // Supervisor can't edit rates
+        document.getElementById('e-rate').readOnly = isSup;
+        document.getElementById('e-pack-rate').readOnly = isSup;
+
+        // But can edit payment for "Other" work
+        const isOther = currentProductionTab === 'other' || (w && w.type === 'other');
+        const paymentEl = document.getElementById('e-payment');
+        paymentEl.readOnly = isSup && !isOther;
+
+        // Auto-fill rates from previous entries for this worker
+        const prevEntry = entries.filter(e => e.workerId === workerId && e.rate > 0).sort((a, b) => b.date.localeCompare(a.date))[0];
+        if (prevEntry) {
+          document.getElementById('e-rate').value = prevEntry.rate;
+          document.getElementById('e-pack-rate').value = prevEntry.rate;
+        } else {
+          document.getElementById('e-rate').value = '';
+          document.getElementById('e-pack-rate').value = '';
+        }
+        calcPreview();
+      };
+
+      sel.onchange = function () { updateFieldsForWorker(this.value); };
+
+      // Clear all fields
+      document.getElementById('e-assigned-morning').value = '';
+      document.getElementById('e-assigned-afternoon').value = '';
+      document.getElementById('e-output-kg').value = '';
+      document.getElementById('e-not-completed').value = '';
+      document.getElementById('e-rate').value = '';
+      document.getElementById('e-pack-pieces').value = '';
+      document.getElementById('e-pack-rate').value = '';
+      document.getElementById('e-work-name').value = '';
+      document.getElementById('e-payment').value = '';
+      document.getElementById('e-date').value = todayStr();
+      document.getElementById('wage-preview').style.display = 'none';
+
+      // Initialize for first worker
+      updateFieldsForWorker(sel.value);
+
+      document.getElementById('btn-save-entry').classList.remove('hidden');
+      document.getElementById('modal-entry').classList.add('open');
+    }
+
+    // ENTRIES ARE NOW NON-EDITABLE - Function disabled
+    function editEntry(id) {
+      const e = entries.find(x => x.id === id);
+      if (!e) return;
+      const w = workerById(e.workerId);
+      if (!w) return;
+
+      document.getElementById('e-id').value = e.id;
+      document.getElementById('entry-modal-title').textContent = 'Update Work Entry';
+      const sel = document.getElementById('e-worker');
+      
+      // Ensure the worker is in the selectable list (might be filtered by production)
+      let availableWorkers = workers;
+      if (currentProductionTab !== 'all' && currentProductionTab !== 'other') {
+        availableWorkers = workers.filter(worker => (worker.type || 'daily') === currentProductionTab);
+      }
+      if (!availableWorkers.some(worker => worker.id === w.id)) {
+        availableWorkers.push(w);
+      }
+
+      sel.innerHTML = availableWorkers.map(worker => {
+        const typeLabel = { daily: 'Prod 1', permanent: 'Prod 2', packing: 'Prod 3', other: 'Prod 4' }[worker.type || 'daily'];
+        return `<option value="${worker.id}">${worker.name} (${typeLabel})</option>`;
+      }).join('');
+      sel.value = e.workerId;
+      
+      document.getElementById('e-date').value = e.date;
+      const workerType = w.type || 'daily';
+      toggleEntryFields(workerType);
+
+      if (workerType === 'packing') {
+        document.getElementById('e-pack-pieces').value = e.output || e.assigned || '';
+        document.getElementById('e-pack-rate').value = e.rate || '';
+      } else if (workerType === 'other') {
+        document.getElementById('e-work-name').value = e.workDesc || '';
+        document.getElementById('e-payment').value = e.wage || '';
+      } else {
+        document.getElementById('e-assigned-morning').value = e.mAssigned || '';
+        document.getElementById('e-assigned-afternoon').value = e.aAssigned || '';
+        document.getElementById('e-output-kg').value = e.output || '';
+        document.getElementById('e-not-completed').value = e.notCompleted !== undefined ? e.notCompleted : (e.assigned - e.output);
+        document.getElementById('e-rate').value = e.rate || '';
+      }
+
+      // Permissions
+      const isSup = currentUser.role === 'supervisor';
+      const isOther = workerType === 'other' || currentProductionTab === 'other';
+      
+      document.getElementById('e-rate').readOnly = isSup;
+      document.getElementById('e-pack-rate').readOnly = isSup;
+      document.getElementById('e-payment').readOnly = isSup && !isOther;
+
+      calcPreview();
+      document.getElementById('modal-entry').classList.add('open');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('open');
+    }
+
+    function toggleWorkerTypeFields(type) {
+      const group = document.getElementById('w-salary-group');
+      if (type === 'permanent') group.classList.remove('hidden');
+      else group.classList.add('hidden');
+    }
+
+    function toggleEntryFields(workerType) {
+      // Hide all fields first
+      ['e-kg-fields', 'e-kg-fields-2', 'e-kg-sync-row', 'e-rate-field',
+        'e-packing-pieces', 'e-packing-rate', 'e-work-desc', 'e-payment-field'].forEach(id => {
+          document.getElementById(id).classList.add('hidden');
+        });
+
+      // Show relevant fields based on worker type
+      if (workerType === 'daily' || workerType === 'permanent') {
+        // Production 1 & 2: KG-based fields
+        document.getElementById('e-kg-fields').classList.remove('hidden');
+        document.getElementById('e-kg-fields-2').classList.remove('hidden');
+        document.getElementById('e-kg-sync-row').classList.remove('hidden');
+        document.getElementById('e-rate-field').classList.remove('hidden');
+      } else if (workerType === 'packing') {
+        // Production 3: Pieces + Rate only
+        document.getElementById('e-packing-pieces').classList.remove('hidden');
+        document.getElementById('e-packing-rate').classList.remove('hidden');
+      } else if (workerType === 'other') {
+        // Production 4: Work description + payment
+        document.getElementById('e-work-desc').classList.remove('hidden');
+        document.getElementById('e-payment-field').classList.remove('hidden');
+      }
+    }
+
+    function deleteWorker() {
+      if (!editingWorkerId) return;
+      const w = workerById(editingWorkerId);
+      if (!w) return;
+
+      if (confirm(`Are you sure you want to delete ${w.name}? All their attendance and work entries will be lost forever.`)) {
+        workers = workers.filter(x => x.id !== editingWorkerId);
+        entries = entries.filter(x => x.workerId !== editingWorkerId);
+        attendance = attendance.filter(x => x.workerId !== editingWorkerId);
+        save();
+        closeModal('modal-worker');
+        renderAll();
+        showToast(`Worker ${w.name} deleted.`);
+      }
+    }
+
+    function saveWorker() {
+      const empId = document.getElementById('w-empid').value.trim();
+      const phone = document.getElementById('w-phone').value.trim();
+      const name = document.getElementById('w-name').value.trim();
+      const type = document.getElementById('w-type').value;
+      const salary = parseFloat(document.getElementById('w-salary').value) || 0;
+      const otRate = parseFloat(document.getElementById('w-ot-rate').value) || 0;
+      const otFixed = parseFloat(document.getElementById('w-ot-fixed').value) || 0;
+
+      // VALIDATION
+      if (!name) { showToast('ERROR: Worker name is required'); return; }
+      if (name.length < 3) { showToast('ERROR: Name too short (min 3 chars)'); return; }
+
+      // Duplicate Name Check
+      const dupName = workers.find(w => w.name.toLowerCase() === name.toLowerCase() && w.id !== editingWorkerId);
+      if (dupName) { showToast(`ERROR: Worker "${name}" already exists!`); return; }
+
+      if (type === 'permanent' && salary <= 0) { showToast('ERROR: Monthly salary required for permanent staff'); return; }
+
+      // Duplicate ID Check
+      if (!empId) { showToast('ERROR: Employee ID is required'); return; }
+      const dupId = workers.find(w => w.empId.toLowerCase() === empId.toLowerCase() && w.id !== editingWorkerId);
+      if (dupId) { showToast(`ERROR: Employee ID ${empId} is already taken!`); return; }
+
+      if (editingWorkerId) {
+        // Update existing worker
+        const idx = workers.findIndex(w => w.id === editingWorkerId);
+        if (idx !== -1) {
+          workers[idx] = {
+            ...workers[idx],
+            empId, phone, name, type, salary, otRate, otFixed
+          };
+          showToast('Worker profile updated! ✓');
+        }
+      } else {
+        // Add new worker
+        workers.push({
+          id: uid(),
+          empId, phone, name, type, salary, otRate, otFixed,
+          emoji: emojis[workers.length % emojis.length]
+        });
+        showToast(`New worker "${name}" added! ✓`);
+      }
+
+      save();
+      closeModal('modal-worker');
+      renderAll();
+    }
+
+    function saveEntry() {
+      const entryId = document.getElementById('e-id').value;
+      const workerId = document.getElementById('e-worker').value;
+      const date = document.getElementById('e-date').value;
+      const w = workerById(workerId);
+      if (!w) return;
+
+      // Determine worker type based on current production tab
+      // For Production 4, always use 'other' regardless of worker's actual type
+      const workerType = currentProductionTab === 'other' ? 'other' : (w.type || 'daily');
+
+      // RBAC Check
+      if (!hasActionPermission(workerType === 'other' ? 'other' : (w.type || 'daily'), 'payment')) {
+        showToast('Permission Denied: No payment access');
+        return;
+      }
+
+      if (!date) { showToast('Select date'); return; }
+
+      let wage, assigned, output, rate, mAssigned, aAssigned, notCompleted, workDesc;
+
+      if (workerType === 'packing') {
+        // Production 3: Pieces × Rate (simplified - only 2 fields)
+        const pieces = parseFloat(document.getElementById('e-pack-pieces').value) || 0;
+        const packRate = parseFloat(document.getElementById('e-pack-rate').value) || 0;
+        if (pieces <= 0) { showToast('Enter number of pieces'); return; }
+        if (packRate <= 0) { showToast('Enter rate per piece'); return; }
+
+        wage = Math.round(pieces * packRate * 100) / 100;
+        assigned = pieces;       // Store pieces as assigned
+        output = pieces;         // Store pieces as output
+        rate = packRate;
+        mAssigned = pieces;
+        aAssigned = 0;
+        notCompleted = 0;
+        workDesc = '';
+      } else if (workerType === 'other') {
+        // Production 4: Work description + payment
+        workDesc = document.getElementById('e-work-name').value.trim();
+        wage = parseFloat(document.getElementById('e-payment').value) || 0;
+        if (!workDesc) { showToast('Enter work description'); return; }
+        if (wage <= 0) { showToast('Enter payment amount'); return; }
+        assigned = 0;
+        output = 0;
+        rate = 0;
+        mAssigned = 0;
+        aAssigned = 0;
+        notCompleted = 0;
+      } else {
+        // Production 1 & 2: KG-based
+        const mAssignedStr = document.getElementById('e-assigned-morning').value;
+        mAssigned = parseFloat(mAssignedStr) || 0;
+        const aAssignedStr = document.getElementById('e-assigned-afternoon').value;
+        aAssigned = parseFloat(aAssignedStr) || 0;
+        const outKgStr = document.getElementById('e-output-kg').value;
+        const notCompletedStr = document.getElementById('e-not-completed').value;
+        
+        assigned = mAssigned + aAssigned;
+        output = parseFloat(outKgStr) || (assigned - (parseFloat(notCompletedStr) || 0));
+        notCompleted = assigned - output;
+
+        const rateStr = document.getElementById('e-rate').value;
+        rate = parseFloat(rateStr) || 0;
+
+        if (assigned <= 0 && output <= 0) { showToast('Enter assigned or completed kg'); return; }
+        if (rate <= 0) { showToast('Enter rate per kg'); return; }
+
+        wage = Math.round(output * rate * 100) / 100;
+        workDesc = '';
+      }
+
+      if (entryId) {
+        const idx = entries.findIndex(x => x.id === entryId);
+        if (idx !== -1) {
+          entries[idx] = { ...entries[idx], workerId, date, assigned, output, rate, wage, mAssigned, aAssigned, notCompleted, workDesc };
+          showToast(`Entry updated for ${w.name} ✓`);
+        }
+      } else {
+        entries.push({ id: uid(), workerId, date, assigned, output, rate, wage, mAssigned, aAssigned, notCompleted, workDesc });
+        showToast(`₹${wage} saved for ${w.name} ✓`);
+      }
+
+      save();
+      closeModal('modal-entry');
+      renderAll();
+    }
+
+    function calcPreview() {
+      const preview = document.getElementById('wage-preview');
+      const workerId = document.getElementById('e-worker').value;
+      const w = workerById(workerId);
+
+      if (!w) {
+        preview.style.display = 'none';
+        return;
+      }
+
+      const workerType = w.type || 'daily';
+
+      if (workerType === 'packing') {
+        // Production 3: Pieces × Rate (simplified)
+        const pieces = parseFloat(document.getElementById('e-pack-pieces').value) || 0;
+        const rate = parseFloat(document.getElementById('e-pack-rate').value) || 0;
+        if (pieces > 0 && rate > 0) {
+          const wage = Math.round(pieces * rate * 100) / 100;
+          document.getElementById('preview-amount').textContent = '₹' + wage;
+          document.getElementById('preview-calc').textContent = `${pieces} pieces × ₹${rate}/piece = ₹${wage}`;
+          preview.style.display = 'block';
+        } else {
+          preview.style.display = 'none';
+        }
+      } else if (workerType === 'other') {
+        const payment = parseFloat(document.getElementById('e-payment').value) || 0;
+        const desc = document.getElementById('e-work-name').value.trim();
+        if (payment > 0) {
+          document.getElementById('preview-amount').textContent = '₹' + payment;
+          document.getElementById('preview-calc').textContent = desc ? `Payment for: ${desc}` : `Payment for work`;
+          preview.style.display = 'block';
+        } else {
+          preview.style.display = 'none';
+        }
+      } else {
+        // Production 1 & 2: KG-based
+        const mAssigned = parseFloat(document.getElementById('e-assigned-morning').value) || 0;
+        const aAssigned = parseFloat(document.getElementById('e-assigned-afternoon').value) || 0;
+        const notCompleted = parseFloat(document.getElementById('e-not-completed').value) || 0;
+        const rate = parseFloat(document.getElementById('e-rate').value);
+        const assigned = mAssigned + aAssigned;
+        const output = assigned - notCompleted;
+        if (output >= 0 && assigned > 0 && rate > 0) {
+          const wage = Math.round(output * rate * 100) / 100;
+          document.getElementById('preview-amount').textContent = '₹' + wage;
+          document.getElementById('preview-calc').textContent = `${output} kg completed × ₹${rate}/kg = ₹${wage}`;
+          preview.style.display = 'block';
+        } else {
+          preview.style.display = 'none';
+        }
+      }
+    }
+
+    // ── ATTENDANCE ────────────────────────────────────────────────────────────
+    function openAttendance() {
+      // Check if user has attendance permission for current production tab
+      if (currentUser.role === 'supervisor' && !hasActionPermission(currentProductionTab, 'attendance')) {
+        showToast('Permission Denied: No attendance access for this section');
+        return;
+      }
+
+      document.getElementById('att-date').value = todayStr();
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById('screen-attendance').classList.add('active');
+      renderAttendanceList();
+    }
+    function closeAttendance() {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById('screen-home').classList.add('active');
+    }
+    function renderAttendanceList() {
+      const date = document.getElementById('att-date').value;
+      const list = document.getElementById('attendance-list');
+      const dEntries = entries.filter(e => e.date === date);
+
+      // Filter workers based on supervisor access
+      let visibleWorkers = workers;
+      if (currentUser && currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        visibleWorkers = workers.filter(w => accessible.includes(w.type || 'daily'));
+      }
+
+      if (visibleWorkers.length === 0) {
+        list.innerHTML = `<div class="empty">No workers in your accessible sections</div>`;
+        return;
+      }
+      list.innerHTML = visibleWorkers.map(w => {
+        let att = attendance.find(a => a.date === date && a.workerId === w.id);
+        let status = att ? att.status : 'present';
+        const sColor = statusColor(status);
+        let otHours = att && att.otHours ? att.otHours : 0;
+        let otAmt = att ? (att.otAmount || 0) : 0;
+        let adv = att ? att.advance : 0;
+        let pieceWage = dEntries.filter(e => e.workerId === w.id).reduce((s, e) => s + e.wage, 0);
+
+        let basePay = pieceWage;
+        let baseLabel = 'Piece Wage';
+        const isPresent = isWorking(status);
+        const halfDay = isHalfDay(status);
+        const multiplier = halfDay ? 0.5 : 1;
+
+        if (w.type === 'permanent' && isPresent) {
+          basePay = Math.round(((w.salary || 0) / 30) * multiplier);
+          baseLabel = halfDay ? (status === 'forenoon' ? 'Forenoon Salary' : 'Afternoon Salary') : 'Daily Salary';
+        } else if (w.type === 'daily' && halfDay) {
+          basePay = Math.round(pieceWage * 0.5);
+          baseLabel = status === 'forenoon' ? 'Forenoon Wage' : 'Afternoon Wage';
+        }
+
+        let net = basePay + otAmt - adv;
+        const otRateInfo = w.otRate ? `₹${w.otRate}/hr` : 'no rate';
+
+        // Production type badge
+        const typeLabels = { daily: 'P1', permanent: 'P2', packing: 'P3', other: 'P4' };
+        const typeTag = `<span style="font-size:8px; font-weight:800; color:var(--text-muted); border:1px solid var(--border); padding:1px 4px; border-radius:4px; margin-left:4px;">${typeLabels[w.type || 'daily']}</span>`;
+
+        const hasEditPerm = (currentUser.role === 'admin') || (currentUser.role === 'supervisor' && hasActionPermission(w.type || 'daily', 'payment'));
+        const otDisabled = !hasEditPerm ? 'disabled' : '';
+        const advDisabled = !hasEditPerm ? 'disabled' : '';
+
+        const sectionMap = { daily: 'Prod 1', permanent: 'Prod 2', packing: 'Prod 3', other: 'Prod 4' };
+        const prodIndicator = sectionMap[w.type || 'daily'];
+
+        return `
+    <div class="card" style="margin:0 16px 12px; padding:18px; border-left:4px solid ${sColor}; background:var(--surface); border-radius:18px; box-shadow:var(--shadow);">
+      <div style="display:grid; grid-template-columns: 48px 1fr auto; align-items:center; gap:12px; margin-bottom:16px;">
+        <div class="item-icon" style="background:var(--surface-raised); border-color:${sColor};">
+          <span style="font-size:20px;">${w.emoji || '👷'}</span>
+        </div>
+        <div style="min-width:0;">
+          <div style="font-size:15px; font-weight:700; color:var(--text-bright); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            ${w.name}${typeTag}
+          </div>
+          <div style="font-size:9px; color:var(--text-muted); font-family:var(--mono);">${w.empId || ''} · ${prodIndicator}</div>
+        </div>
+        <select class="form-input" aria-label="Attendance Status" style="padding:8px 12px; width:auto; font-size:12px; height:auto; border-radius:10px; font-weight:700; background:var(--surface-raised); border-color:var(--border);" onchange="updateAttendance('${date}', '${w.id}', 'status', this.value)">
+          <option value="present" ${status === 'present' ? 'selected' : ''}>Present</option>
+          <option value="forenoon" ${status === 'forenoon' ? 'selected' : ''}>Forenoon</option>
+          <option value="afternoon" ${status === 'afternoon' ? 'selected' : ''}>Afternoon</option>
+          <option value="absent" ${status === 'absent' ? 'selected' : ''}>Absent</option>
+        </select>
+      </div>
+      
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+        <div>
+          <label class="form-label" for="att-ot-${w.id}" style="font-size:9px; margin-bottom:6px; display:block;">OT HOURS <span style="color:var(--accent);">(${otRateInfo})</span></label>
+          <input type="number" id="att-ot-${w.id}" class="form-input" style="padding:10px 14px; font-size:14px; border-radius:10px;" value="${otHours > 0 ? otHours : ''}" placeholder="0" ${otDisabled} onchange="updateAttendance('${date}', '${w.id}', 'ot', this.value)" />
+        </div>
+        <div>
+          <label class="form-label" for="att-adv-${w.id}" style="font-size:9px; margin-bottom:6px; display:block;">ADVANCE (₹)</label>
+          <input type="number" id="att-adv-${w.id}" class="form-input" style="padding:10px 14px; font-size:14px; border-radius:10px;" value="${adv === 0 ? '' : adv}" placeholder="0" ${advDisabled} onchange="updateAttendance('${date}', '${w.id}', 'advance', this.value)" />
+        </div>
+      </div>
+      
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; display:flex; justify-content:space-between; align-items:center;">
+        <div style="color:var(--text-muted); font-family:var(--mono);">${baseLabel}: ₹${basePay} ${otAmt > 0 ? `+ OT:₹${otAmt}` : ''}</div>
+        <div style="color:var(--accent); font-weight:800; font-size:15px; font-family:var(--mono);">₹${net}</div>
+      </div>
+    </div>`;
+      }).join('');
+    }
+
+    function markAllPresent() {
+      // Check if user has attendance permission
+      if (currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        const hasAnyAttendancePerm = accessible.some(prod => hasActionPermission(prod, 'attendance'));
+        if (!hasAnyAttendancePerm) {
+          showToast('Permission Denied: No attendance access');
+          return;
+        }
+      }
+
+      const date = document.getElementById('att-date').value;
+      if (!date) return;
+
+      // Filter workers based on supervisor access
+      let targetWorkers = workers;
+      if (currentUser && currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        targetWorkers = workers.filter(w => {
+          const prodType = w.type || 'daily';
+          return accessible.includes(prodType) && hasActionPermission(prodType, 'attendance');
+        });
+      }
+
+      targetWorkers.forEach(w => {
+        let rec = attendance.find(a => a.date === date && a.workerId === w.id);
+        if (!rec) {
+          rec = { date, workerId: w.id, status: 'present', otAmount: 0, otHours: 0, advance: 0 };
+          attendance.push(rec);
+        } else {
+          rec.status = 'present';
+        }
+      });
+      save();
+      renderAttendanceList();
+      renderTodayEntries();
+      showToast('All accessible workers marked present \u2713');
+    }
+    function updateAttendance(date, wid, field, val) {
+      const w = workerById(wid);
+      if (!w) return;
+      const prodType = w.type || 'daily';
+
+      // RBAC Checks
+      if (field === 'status') {
+        if (!hasActionPermission(prodType, 'attendance')) {
+          showToast('Permission Denied: No attendance access');
+          return;
+        }
+      } else if (field === 'ot' || field === 'advance') {
+        if (!hasActionPermission(prodType, 'payment')) {
+          showToast('Permission Denied: No payment access');
+          return;
+        }
+      }
+
+      let rec = attendance.find(a => a.date === date && a.workerId === wid);
+      if (!rec) {
+        rec = { date, workerId: wid, status: 'present', otAmount: 0, otHours: 0, advance: 0 };
+        attendance.push(rec);
+      }
+      if (field === 'status') rec.status = val;
+      if (field === 'ot') {
+        const hours = parseFloat(val) || 0;
+        rec.otHours = hours;
+        rec.otAmount = Math.round(hours * (w.otRate || 0));
+      }
+      if (field === 'advance') rec.advance = parseFloat(val) || 0;
+      save();
+      renderAttendanceList();
+    }
+
+    // ── QUICK ASSIGN ──────────────────────────────────────────────────────────
+    let currentQuickAssignType = 'daily';
+
+    function openQuickAssignMenu() {
+      // Check if user has payment permission for any production
+      if (currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        const hasAnyPaymentPerm = accessible.some(prod => hasActionPermission(prod, 'payment'));
+        if (!hasAnyPaymentPerm) {
+          showToast('Permission Denied: No payment access');
+          return;
+        }
+      }
+      document.getElementById('modal-quick-assign-menu').classList.add('open');
+    }
+
+    function openQuickAssign(type) {
+      // Check if user has payment permission for this production type
+      if (currentUser.role === 'supervisor' && !hasActionPermission(type, 'payment')) {
+        showToast('Permission Denied: No payment access for this section');
+        return;
+      }
+
+      closeModal('modal-quick-assign-menu');
+      currentQuickAssignType = type;
+
+      let targetWorkers = workers.filter(w => (w.type || 'daily') === type);
+
+      // Further filter by supervisor access
+      if (currentUser.role === 'supervisor') {
+        const accessible = getAccessibleProductions();
+        targetWorkers = targetWorkers.filter(w => accessible.includes(w.type || 'daily'));
+      }
+
+      if (targetWorkers.length === 0) {
+        showToast(`No ${type === 'daily' ? 'Production 1' : 'Production 3'} workers to assign`);
+        return;
+      }
+
+      const typeLabel = type === 'daily' ? 'Production 1 — Daily Wage' : 'Production 3 — Packing';
+      const unitLabel = type === 'daily' ? 'kg' : 'items';
+      document.getElementById('qa-title').textContent = `⚡ Quick Assign — ${typeLabel}`;
+      document.getElementById('qa-subtitle').textContent = `Assign work to all ${typeLabel} workers in one click.`;
+
+      // Update labels based on type
+      const totalKgLabel = document.querySelector('#qa-total-kg').previousElementSibling;
+      const rateLabel = document.querySelector('#qa-rate').previousElementSibling;
+      if (totalKgLabel) totalKgLabel.textContent = type === 'daily' ? `WEIGHT PER WORKER (KG) — Applied to all` : `ITEMS PER WORKER — Applied to all`;
+      if (rateLabel) rateLabel.textContent = type === 'daily' ? `RATE PER KG (₹) — Applied to all` : `RATE PER ITEM (₹) — Applied to all`;
+
+      const isSup = currentUser && currentUser.role === 'supervisor';
+      document.getElementById('qa-total-kg').value = '';
+      document.getElementById('qa-date').value = todayStr();
+      document.getElementById('qa-rate').value = '';
+
+      // Supervisors can assign quantities but NOT set rate
+      const rateInput = document.getElementById('qa-rate');
+      rateInput.readOnly = isSup;
+      rateInput.placeholder = isSup ? 'Rate set by Admin only' : (type === 'daily' ? 'e.g. 15' : 'e.g. 2');
+
+      // Build per-worker inputs
+      const list = document.getElementById('qa-workers-list');
+      list.innerHTML = targetWorkers.map(w => `
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; background:var(--surface-raised); padding:12px; border-radius:12px; border:1px solid var(--border);">
+      <div style="font-size:20px;">${w.emoji || '👷'}</div>
+      <div style="flex:1;">
+        <div style="font-size:14px; font-weight:700; color:var(--text-bright);">${w.name}</div>
+        <div style="font-size:10px; color:var(--text-muted); font-family:var(--mono);">${w.empId || ''}</div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="number" id="qa-kg-${w.id}"
+          class="form-input"
+          aria-label="Quantity for ${w.name}"
+          style="width:72px; padding:8px; font-size:13px; text-align:center; height:36px;"
+          placeholder="${unitLabel}"
+          oninput="updateQAPreview()"
+        />
+        <div style="font-size:12px; font-family:var(--mono); color:var(--accent); min-width:60px; text-align:right; font-weight:700;" id="qa-preview-${w.id}">₹0</div>
+      </div>
+    </div>
+  `).join('');
+
+
+      document.getElementById('modal-quick-assign').classList.add('open');
+    }
+
+    function splitTotalKG() {
+      const qtyPerWorker = parseFloat(document.getElementById('qa-total-kg').value) || 0;
+      const targetWorkers = workers.filter(w => (w.type || 'daily') === currentQuickAssignType);
+      if (qtyPerWorker <= 0 || targetWorkers.length === 0) return;
+      targetWorkers.forEach(w => {
+        const qtyEl = document.getElementById(`qa-kg-${w.id}`);
+        if (!qtyEl) return;
+        qtyEl.value = qtyPerWorker;
+      });
+      updateQAPreview();
+    }
+
+    function updateQAPreview() {
+      const rate = parseFloat(document.getElementById('qa-rate').value) || 0;
+      const targetWorkers = workers.filter(w => (w.type || 'daily') === currentQuickAssignType);
+      const unitLabel = currentQuickAssignType === 'daily' ? 'kg' : 'items';
+      targetWorkers.forEach(w => {
+        const qtyEl = document.getElementById(`qa-kg-${w.id}`);
+        const prevEl = document.getElementById(`qa-preview-${w.id}`);
+        if (!qtyEl || !prevEl) return;
+        const qty = parseFloat(qtyEl.value) || 0;
+        prevEl.textContent = rate > 0 && qty > 0 ? `\u20b9${Math.round(qty * rate)}` : (qty > 0 ? `${qty} ${unitLabel}` : '\u20b90');
+      });
+    }
+
+    function saveQuickAssign() {
+      const date = document.getElementById('qa-date').value;
+      const isSup = currentUser && currentUser.role === 'supervisor';
+      const enteredRate = parseFloat(document.getElementById('qa-rate').value) || 0;
+
+      if (!date) { showToast('Select a date'); return; }
+      if (!isSup && enteredRate <= 0) { showToast('Enter rate'); return; }
+
+      const targetWorkers = workers.filter(w => (w.type || 'daily') === currentQuickAssignType);
+      let saved = 0;
+
+      targetWorkers.forEach(w => {
+        const qtyEl = document.getElementById(`qa-kg-${w.id}`);
+        const qty = parseFloat(qtyEl ? qtyEl.value : 0) || 0;
+        if (qty <= 0) return;
+
+        // Supervisors reuse existing rate from latest entry for this worker
+        const prevEntry = entries.filter(e => e.workerId === w.id).sort((a, b) => b.date.localeCompare(a.date))[0];
+        const rate = isSup ? (prevEntry ? prevEntry.rate : 0) : enteredRate;
+        const wage = Math.round(qty * rate * 100) / 100;
+        const existing = entries.findIndex(e => e.workerId === w.id && e.date === date);
+
+        const entryData = {
+          id: existing >= 0 ? entries[existing].id : uid(),
+          workerId: w.id, date,
+          assigned: qty, output: qty,
+          mAssigned: currentQuickAssignType === 'daily' ? qty : 0,
+          aAssigned: 0,
+          notCompleted: 0, rate, wage,
+          workDesc: ''
+        };
+        if (existing >= 0) entries[existing] = entryData;
+        else entries.push(entryData);
+        saved++;
+      });
+
+      if (saved === 0) { showToast('Enter quantity for at least one worker'); return; }
+      save();
+      closeModal('modal-quick-assign');
+      renderAll();
+      showToast(`\u2713 Assigned to ${saved} worker${saved > 1 ? 's' : ''}!`);
+    }
+
+
+    // ── LEADERBOARD ───────────────────────────────────────────────────────────
+    let currentLeaderboardPeriod = 'daily';
+
+    function openLeaderboard() {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById('screen-leaderboard').classList.add('active');
+      renderLeaderboard('daily');
+    }
+    function closeLeaderboard() {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById('screen-workers').classList.add('active');
+    }
+    function renderLeaderboard(period) {
+      currentLeaderboardPeriod = period;
+      document.querySelectorAll('#screen-leaderboard .report-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('lb-tab-' + period).classList.add('active');
+
+      const now = new Date();
+      const today = todayStr();
+      let from = today;
+
+      if (period === 'weekly') {
+        const start = new Date(now);
+        start.setDate(now.getDate() - now.getDay());
+        from = start.toISOString().split('T')[0];
+      } else if (period === 'monthly') {
+        from = now.toISOString().substr(0, 7) + '-01';
+      }
+
+      let filtered = entries.filter(e => e.date >= from && e.date <= today);
+
+      // Leaderboard is specifically for Prod 1 (Daily/KG)
+      filtered = filtered.filter(e => {
+        const w = workerById(e.workerId);
+        if (!w || (w.type && w.type !== 'daily')) return false;
+
+        // RBAC: Supervisors only see their accessible sections
+        if (currentUser && currentUser.role === 'supervisor') {
+          const accessible = getAccessibleProductions();
+          return accessible.includes('daily');
+        }
+        return true;
+      });
+
+      const map = {};
+      filtered.forEach(e => {
+        if (!map[e.workerId]) map[e.workerId] = 0;
+        map[e.workerId] += e.output;
+      });
+
+      const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
+      const content = document.getElementById('leaderboard-content');
+      if (sorted.length === 0) {
+        content.innerHTML = `<div class="empty" style="margin-top:40px;"><div class="empty-icon">🏆</div><div class="empty-text">No work completed in this period.</div></div>`;
+        return;
+      }
+
+      const medals = ['🥇', '🥈', '🥉'];
+      content.innerHTML = sorted.map(([wid, kg], i) => {
+        const w = workerById(wid);
+        if (!w) return '';
+        let rank = i < 3 ? `<div style="font-size:24px; min-width:30px; text-align:center;">${medals[i]}</div>` : `<div style="font-size:16px; font-weight:800; color:var(--text-muted); min-width:30px; text-align:center;">#${i + 1}</div>`;
+        return `
+    <div class="entry-item" style="margin-left:0; margin-right:0;">
+      <div class="entry-left" style="gap:14px; align-items:center;">
+        ${rank}
+        <div>
+          <div class="entry-name" style="font-size:15px;">${w.emoji || '👷'} ${w.name}</div>
+        </div>
+      </div>
+      <div style="font-size:20px; font-weight:800; font-family:var(--mono); color:var(--accent);">${kg} <span style="font-size:12px; color:var(--text-muted);">kg</span></div>
+    </div>`;
+      }).join('');
+    }
+
+    function exportLeaderboardPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF('p', 'mm', 'a4');
+
+      const now = new Date();
+      const today = todayStr();
+      let from = today;
+      let label = 'Today';
+
+      if (currentLeaderboardPeriod === 'weekly') {
+        const start = new Date(now);
+        start.setDate(now.getDate() - now.getDay());
+        from = start.toISOString().split('T')[0];
+        label = 'This Week';
+      } else if (currentLeaderboardPeriod === 'monthly') {
+        from = now.toISOString().substr(0, 7) + '-01';
+        label = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+      }
+
+      let filtered = entries.filter(e => e.date >= from && e.date <= today);
+      filtered = filtered.filter(e => {
+        const w = workerById(e.workerId);
+        if (!w || (w.type && w.type !== 'daily')) return false;
+        if (currentUser && currentUser.role === 'supervisor') {
+          const accessible = getAccessibleProductions();
+          return accessible.includes('daily');
+        }
+        return true;
+      });
+
+      const map = {};
+      filtered.forEach(e => {
+        if (!map[e.workerId]) map[e.workerId] = 0;
+        map[e.workerId] += e.output;
+      });
+
+      const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
+      if (sorted.length === 0) { showToast('No data to export'); return; }
+
+      // Header
+      doc.setFillColor(13, 17, 23);
+      doc.rect(0, 0, 210, 40, 'F');
+      doc.setTextColor(240, 192, 64);
+      doc.setFontSize(22);
+      doc.setFont("helvetica", "bold");
+      doc.text("Production Leaderboard", 14, 18);
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.text(`Period: ${label}  |  Generated: ${new Date().toLocaleString()}`, 14, 28);
+
+      const tableData = sorted.map(([wid, kg], i) => {
+        const w = workerById(wid);
+        const medal = i === 0 ? '(1) ' : i === 1 ? '(2) ' : i === 2 ? '(3) ' : '';
+        return [i + 1, medal + (w ? w.name : 'Unknown'), kg + ' kg'];
+      });
+
+      doc.autoTable({
+        startY: 45,
+        head: [['Rank', 'Worker Name', 'Total Output']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [240, 192, 64], textColor: [0, 0, 0] },
+        columnStyles: { 0: { cellWidth: 20 }, 2: { fontStyle: 'bold' } }
+      });
+
+      saveAndSharePDF(doc, `Leaderboard_${label}.pdf`);
+    }
+
+
+    // ── NAV ───────────────────────────────────────────────────────────────────
+    function switchScreen(name, btn) {
+      try {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+
+        const target = document.getElementById('screen-' + name);
+        if (target) {
+          target.classList.add('active');
+        } else {
+          console.error('Target screen not found:', name);
+          document.getElementById('screen-home').classList.add('active');
+        }
+
+        if (btn) btn.classList.add('active');
+
+        if (name === 'reports') { buildWorkerFilterChips(); renderReport(); }
+      } catch (e) {
+        console.error('SwitchScreen error:', e);
+      }
+    }
+
+    // ── TOAST ─────────────────────────────────────────────────────────────────
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    // ── AUTH LOGIC ────────────────────────────────────────────────────────────
+    function checkAuth() {
+      const loginScreen = document.getElementById('screen-login');
+      const mainHeader = document.getElementById('main-header');
+      const bottomNav = document.querySelector('.bottom-nav');
+
+      if (currentUser) {
+        loginScreen.classList.remove('active');
+        mainHeader.classList.remove('hidden');
+        bottomNav.classList.remove('hidden');
+
+        // If we are currently seeing NO active screens or stuck on login, go home
+        const activeScreens = document.querySelectorAll('.screen.active');
+        if (activeScreens.length === 0) {
+          switchScreen('home', document.querySelector('.nav-btn'));
+        }
+      } else {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        loginScreen.classList.add('active');
+        mainHeader.classList.add('hidden');
+        bottomNav.classList.add('hidden');
+      }
+    }
+
+    function doLogin() {
+      console.log('doLogin triggered');
+      try {
+        const userEl = document.getElementById('l-user');
+        const passEl = document.getElementById('l-pass');
+
+        if (!userEl || !passEl) {
+          console.error('Login elements not found');
+          return;
+        }
+
+        const user = userEl.value.trim();
+        const pass = passEl.value.trim();
+
+        console.log('Attempting login for:', user);
+
+        if (!user || !pass) {
+          showToast('Please enter both username and password');
+          return;
+        }
+
+        const found = users.find(u => u.username.toLowerCase() === user.toLowerCase() && u.password === pass);
+        if (found) {
+          console.log('User found:', found.username);
+          currentUser = found;
+          localStorage.setItem('wt_session', JSON.stringify(currentUser));
+
+          showToast(`Welcome back, ${found.username}!`);
+
+          checkAuth();
+          renderAll();
+
+          // Force navigate to home
+          const homeBtn = document.querySelector('.nav-btn');
+          switchScreen('home', homeBtn);
+        } else {
+          console.warn('Invalid credentials');
+          showToast('Invalid username or password');
+        }
+      } catch (e) {
+        console.error('Login error:', e);
+        showToast('Login Error: ' + e.message);
+      }
+    }
+
+    function doLogout() {
+      currentUser = null;
+      localStorage.removeItem('wt_session');
+      checkAuth();
+    }
+
+    // ── SYNC LOGIC ───────────────────────────────────────────────────────────
+    async function uploadToDrive() {
+      if (!currentUser) return;
+      const btn = event.currentTarget || document.getElementById('sync-btn');
+      const originalContent = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="rotating" style="display:inline-block;">&#8635;</span> Sending...`;
+
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'a4');
+
+        // Header
+        doc.setFillColor(13, 17, 23);
+        doc.rect(0, 0, 210, 40, 'F');
+        doc.setTextColor(240, 192, 64);
+        doc.setFontSize(22);
+        doc.setFont("helvetica", "bold");
+        doc.text("WageTrack Workers List", 14, 18);
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Exported by: ${currentUser.username} (${currentUser.role})`, 14, 28);
+        doc.text(`Date: ${new Date().toLocaleString()}`, 14, 34);
+
+        const tableData = workers.map(w => [w.id, w.name, w.section || 'N/A', (w.type || 'daily').toUpperCase()]);
+
+        doc.autoTable({
+          startY: 45,
+          head: [['ID', 'Worker Name', 'Section', 'Type']],
+          body: tableData,
+          theme: 'striped',
+          headStyles: { fillColor: [240, 192, 64], textColor: [0, 0, 0], fontStyle: 'bold' }
+        });
+
+        const pdfDataUri = doc.output('datauristring');
+        await sendCloudEmail({
+          subject: `WageTrack: Workers List (${new Date().toLocaleDateString()})`,
+          body: `Please find the attached Workers List backup.\n\nSent by: ${currentUser.username}`,
+          filename: `Workers_List_${new Date().getTime()}.pdf`,
+          base64Data: pdfDataUri
+        });
+
+      } catch (err) {
+        console.error('Drive Upload Error:', err);
+        showToast('Error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+      }
+    }
+
+    async function cloudSyncReport() {
+      if (!currentUser) return;
+      const btn = event.currentTarget;
+      const originalContent = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="rotating" style="display:inline-block;">&#8635;</span> Sending...`;
+
+      try {
+        // Use true to trigger automatic email instead of share menu
+        await exportReportPDF(true);
+      } catch (err) {
+        console.error('Report Cloud Error:', err);
+        showToast('Error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+      }
+    }
+
+    async function syncData() {
+      const btn = document.getElementById('sync-btn-dash') || document.getElementById('sync-btn');
+      if (btn && btn.disabled) return;
+
+      const originalInner = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="rotating">↻</span> SENDING...`;
+      }
+
+      try {
+        const backup = {
+          timestamp: new Date().toISOString(),
+          version: '2.2',
+          data: { workers, entries, attendance, users }
+        };
+
+        const success = await sendCloudEmail({
+          subject: "WageTrack Full Data Backup: " + new Date().toLocaleString(),
+          body: "Complete system backup including workers, entries, and users.",
+          jsonContent: backup
+        });
+
+        if (success) {
+          if (window.showToast) showToast('✓ Sync Successful');
+        } else {
+          showToast('Sync failed. Please check internet.');
+        }
+      } catch (err) {
+        console.error('Sync Error:', err);
+        showToast('Sync Error: ' + err.message);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalInner;
+        }
+      }
+    }
+
+    async function testCloudConnection() {
+      try {
+        if (window.showToast) showToast('Sending Test Pulse...');
+        const success = await sendCloudEmail({
+          subject: "WageTrack Connection Test",
+          body: "This is a simple test email to verify the connection. No attachments.",
+          jsonContent: null
+        });
+        if (success) {
+          showToast('✓ Test sent! Check your inbox.');
+        }
+      } catch (e) {
+        showToast('Test Failed: ' + e.message);
+      }
+    }
+
+
+    // Add CSS for rotation if needed
+    const style = document.createElement('style');
+    style.innerHTML = `
+      @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .rotating svg {
+        animation: rotate 1s linear infinite;
+      }
+    `;
+    document.head.appendChild(style);
+
+    // ── USER MGMT LOGIC ───────────────────────────────────────────────────────
+    function renderUsers() {
+      const list = document.getElementById('users-list');
+      const sups = users.filter(u => u.role === 'supervisor');
+      if (sups.length === 0) {
+        list.innerHTML = `<div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No supervisors created.<br>Admins can add supervisors here.</div></div>`;
+        return;
+      }
+      list.innerHTML = sups.map(u => {
+        const accessSummary = [];
+        if (u.access) {
+          const prodNames = { prod1: 'Prod 1', prod2: 'Prod 2', prod3: 'Prod 3', prod4: 'Prod 4' };
+          Object.keys(u.access).forEach(prod => {
+            if (u.access[prod].length > 0) {
+              const perms = u.access[prod].map(p => p === 'attendance' ? 'Att' : 'Pay').join('+');
+              accessSummary.push(`${prodNames[prod]}(${perms})`);
+            }
+          });
+        }
+        const accessText = accessSummary.length > 0 ? accessSummary.join(' · ') : 'No access';
+        return `
+    <div class="user-item">
+      <div class="user-info-row">
+        <div class="user-name-row">${u.username}</div>
+        <div class="user-role-row">${u.role} · ${accessText}</div>
+      </div>
+      <button class="pill-btn secondary" onclick="editUser('${u.username}')" style="padding:6px 10px; font-size:11px;">✏️ Edit</button>
+    </div>`;
+      }).join('');
+    }
+
+    function openAddUser() {
+      document.getElementById('user-modal-title').textContent = 'Add Supervisor';
+      document.getElementById('u-username').value = '';
+      document.getElementById('u-username').readOnly = false;
+      document.getElementById('u-password').value = '';
+      document.getElementById('u-gmail').value = '';
+
+      // Reset all checkboxes
+      ['prod1', 'prod2', 'prod3', 'prod4'].forEach(prod => {
+        document.getElementById(`u-${prod}-access`).checked = false;
+        document.getElementById(`u-${prod}-perms`).style.display = 'none';
+        document.querySelectorAll(`.u-${prod}-perm`).forEach(cb => cb.checked = false);
+      });
+
+      document.getElementById('modal-user').classList.add('open');
+    }
+
+    function editUser(username) {
+      const u = users.find(user => user.username === username);
+      if (!u) return;
+
+      document.getElementById('user-modal-title').textContent = 'Edit Supervisor';
+      document.getElementById('u-username').value = u.username;
+      document.getElementById('u-username').readOnly = true; // Can't change username
+      document.getElementById('u-password').value = u.password || '';
+      document.getElementById('u-gmail').value = u.gmail || '';
+
+      // Reset all checkboxes first
+      ['prod1', 'prod2', 'prod3', 'prod4'].forEach(prod => {
+        document.getElementById(`u-${prod}-access`).checked = false;
+        document.getElementById(`u-${prod}-perms`).style.display = 'none';
+        document.querySelectorAll(`.u-${prod}-perm`).forEach(cb => cb.checked = false);
+      });
+
+      // Set checkboxes based on user access
+      if (u.access) {
+        Object.keys(u.access).forEach(prod => {
+          if (u.access[prod].length > 0) {
+            document.getElementById(`u-${prod}-access`).checked = true;
+            document.getElementById(`u-${prod}-perms`).style.display = 'flex';
+            u.access[prod].forEach(perm => {
+              const cb = document.querySelector(`.u-${prod}-perm[value="${perm}"]`);
+              if (cb) cb.checked = true;
+            });
+          }
+        });
+      }
+
+      document.getElementById('modal-user').classList.add('open');
+    }
+
+    function toggleProdPermissions(prod, checked) {
+      const permsDiv = document.getElementById(`u-${prod}-perms`);
+      if (checked) {
+        permsDiv.style.display = 'flex';
+      } else {
+        permsDiv.style.display = 'none';
+        // Uncheck all permissions when access is removed
+        document.querySelectorAll(`.u-${prod}-perm`).forEach(cb => cb.checked = false);
+      }
+    }
+
+    function saveUser() {
+      const username = document.getElementById('u-username').value.trim();
+      const password = document.getElementById('u-password').value.trim();
+      const gmail = document.getElementById('u-gmail').value.trim();
+
+      if (!username || !password || !gmail) { showToast('Enter username, password and gmail'); return; }
+
+      // Build access object
+      const access = {};
+      ['prod1', 'prod2', 'prod3', 'prod4'].forEach(prod => {
+        const hasAccess = document.getElementById(`u-${prod}-access`).checked;
+        if (hasAccess) {
+          const perms = [];
+          document.querySelectorAll(`.u-${prod}-perm:checked`).forEach(cb => {
+            perms.push(cb.value);
+          });
+          // If a supervisor has access to a production, they MUST have some permission.
+          // Default to at least attendance if none selected
+          if (perms.length === 0) perms.push('attendance');
+          access[prod] = perms;
+        }
+      });
+
+      const existingIdx = users.findIndex(u => u.username === username);
+      if (existingIdx !== -1) {
+        // Update existing user
+        users[existingIdx].password = password;
+        users[existingIdx].gmail = gmail;
+        users[existingIdx].access = access;
+        showToast('Supervisor updated! ✓');
+      } else {
+        // Add new user
+        if (users.find(u => u.username === username)) { showToast('Username already exists'); return; }
+        users.push({ username, password, gmail, role: 'supervisor', access });
+        showToast('Supervisor added! ✓');
+      }
+
+      save();
+      closeModal('modal-user');
+      renderUsers();
+    }
+
+    // Close modals on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', e => {
+        if (e.target === overlay) overlay.classList.remove('open');
+      });
+    });
+
+    // STARTUP
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('App Startup: DOMContentLoaded');
+
+      try {
+        // Ensure data containers exist
+        if (!Array.isArray(workers)) workers = [];
+        if (!Array.isArray(entries)) entries = [];
+        if (!Array.isArray(attendance)) attendance = [];
+        if (!Array.isArray(users)) users = [];
+
+        // SANITY CHECK: Remove orphaned data
+        const workerIds = new Set(workers.map(w => w.id));
+        const initialEntriesCount = entries.length;
+        const initialAttCount = attendance.length;
+
+        entries = entries.filter(e => workerIds.has(e.workerId));
+        attendance = attendance.filter(a => workerIds.has(a.workerId));
+
+        if (entries.length < initialEntriesCount || attendance.length < initialAttCount) {
+          console.warn('Data Sanity Check: Cleaned up orphaned records');
+          save();
+        }
+
+        // Ensure admin exists
+        if (users.length === 0) {
+          users = [{ username: 'admin', password: 'admin123', gmail: 'admin@gmail.com', role: 'admin', access: {} }];
+          save();
+        }
+
+        checkAuth();
+
+        const now = new Date();
+        const opts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+        const todayDateEl = document.getElementById('today-date');
+        const homeDateBadgeEl = document.getElementById('home-date-badge');
+        const eDateEl = document.getElementById('e-date');
+
+        if (todayDateEl) todayDateEl.textContent = now.toLocaleDateString('en-IN', opts);
+        if (homeDateBadgeEl) homeDateBadgeEl.textContent = now.toLocaleDateString('en-IN', opts);
+        if (eDateEl) eDateEl.value = todayStr();
+
+        if (currentUser) {
+          console.log('Auto-logged in as:', currentUser.username);
+          renderAll();
+        }
+      } catch (err) {
+        console.error('CRITICAL STARTUP ERROR:', err);
+        alert('App failed to start. Local data might be corrupted. Error: ' + err.message);
+      }
+    });
+
+    // Error boundary for PDF
+    const originalExport = exportReportPDF;
+    exportReportPDF = function (autoCloud = false) {
+      try {
+        originalExport(autoCloud);
+      } catch (err) {
+        console.error('PDF Export Error:', err);
+        showToast('PDF Error: ' + err.message);
+      }
+    };
+  </script>
+  <!-- PDF VIEWER MODAL -->
+  <div id="pdf-viewer-overlay">
+    <div id="pdf-loading">
+      <div class="pdf-spinner"></div>
+      <span>Generating PDF...</span>
+    </div>
+    <div id="pdf-viewer-header">
+      <span id="pdf-viewer-title">Report.pdf</span>
+      <button class="pdf-hdr-btn accent" onclick="downloadPDF()">&#11015; Download</button>
+      <button class="pdf-hdr-btn" onclick="closePDFViewer()">&#10005; Close</button>
+    </div>
+    <div id="pdf-canvas-container"></div>
+  </div>
+</body>
+
+</html>
