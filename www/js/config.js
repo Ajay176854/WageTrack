@@ -1,7 +1,8 @@
 (function () {
-  // Cloud Configuration
-  window.SMTP_CONFIG = {
-    gasUrl: "https://script.google.com/macros/s/AKfycbzf7bBqz-a1mmuf_Cc6Nfx8Z0AVVYJh-owuyHgVTj_3US1lYghvCF-cYjyOHeROWn2CUg/exec",
-    target: "aajay1118@gmail.com"
+  // Central Cloud Configuration v3.1
+  window.CLOUD_CONFIG = {
+    // PASTE YOUR NEW URL FROM STEP 2 BELOW
+    gasUrl: "https://script.google.com/macros/s/AKfycbw2VHbUkcGK3PWTuS-vdjTKl2vj_rrDXP7tVxY0xWsPXE-YTB6XehgyxcdDPLMjIqo4/exec",
+    lastSync: localStorage.getItem('wt_last_sync') || 'Never'
   };
 })();

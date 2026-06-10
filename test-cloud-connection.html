@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Connection Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0d1117;
+            color: #c9d1d9;
+        }
+        .test-box {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        button {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2ea043;
+        }
+        button:disabled {
+            background: #6e7681;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .success {
+            background: rgba(46, 160, 67, 0.15);
+            border: 1px solid #2ea043;
+            color: #3fb950;
+        }
+        .error {
+            background: rgba(248, 81, 73, 0.15);
+            border: 1px solid #f85149;
+            color: #ff7b72;
+        }
+        .info {
+            background: rgba(56, 139, 253, 0.15);
+            border: 1px solid #388bfd;
+            color: #58a6ff;
+        }
+        h1 {
+            color: #f0c040;
+        }
+        h2 {
+            color: #58a6ff;
+            font-size: 18px;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: 600;
+            color: #8b949e;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔗 WageTrack Cloud Connection Test</h1>
+    
+    <div class="test-box">
+        <h2>1. Test GAS Endpoint Health</h2>
+        <p>This will check if your Google Apps Script is responding.</p>
+        <button onclick="testHealth()">Test Health Check</button>
+        <div id="health-result"></div>
+    </div>
+
+    <div class="test-box">
+        <h2>2. Test Cloud Login</h2>
+        <p>Test authentication with your cloud credentials.</p>
+        <label>Username:</label>
+        <input type="text" id="test-username" value="admin" />
+        <label>Password:</label>
+        <input type="password" id="test-password" value="admin123" />
+        <button onclick="testLogin()">Test Login</button>
+        <div id="login-result"></div>
+    </div>
+
+    <div class="test-box">
+        <h2>3. Test Data Fetch</h2>
+        <p>Fetch all data from Google Sheets.</p>
+        <button onclick="testFetch()">Fetch All Data</button>
+        <div id="fetch-result"></div>
+    </div>
+
+    <div class="test-box">
+        <h2>4. Test Data Sync</h2>
+        <p>Send sample data to Google Sheets.</p>
+        <button onclick="testSync()">Test Sync</button>
+        <div id="sync-result"></div>
+    </div>
+
+    <script>
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbw2VHbUkcGK3PWTuS-vdjTKl2vj_rrDXP7tVxY0xWsPXE-YTB6XehgyxcdDPLMjIqo4/exec";
+
+        async function testHealth() {
+            const resultDiv = document.getElementById('health-result');
+            resultDiv.innerHTML = '<div class="result info">Testing connection...</div>';
+            
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'GET',
+                    mode: 'cors',
+                    redirect: 'follow'
+                });
+                
+                const text = await response.text();
+                
+                if (response.ok && text.includes('WageTrack')) {
+                    resultDiv.innerHTML = `<div class="result success">✅ SUCCESS!\n\nStatus: ${response.status}\nResponse: ${text.substring(0, 200)}...</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="result error">⚠️ Unexpected Response\n\nStatus: ${response.status}\nResponse: ${text.substring(0, 200)}</div>`;
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="result error">❌ ERROR\n\n${err.message}</div>`;
+            }
+        }
+
+        async function testLogin() {
+            const resultDiv = document.getElementById('login-result');
+            const username = document.getElementById('test-username').value;
+            const password = document.getElementById('test-password').value;
+            
+            resultDiv.innerHTML = '<div class="result info">Authenticating...</div>';
+            
+            try {
+                const payload = {
+                    action: 'cloud_login',
+                    data: { username, password }
+                };
+                
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.innerHTML = `<div class="result success">✅ LOGIN SUCCESS!\n\nUser: ${result.user.username}\nRole: ${result.user.role}\n\nData Keys Received:\n${Object.keys(result.data).join('\n')}\n\nWorkers Count: ${result.data.workers?.length || 0}\nUnit1 Entries: ${result.data.unit1Entries?.length || 0}\nUnit2 Entries: ${result.data.unit2Entries?.length || 0}\nUnit3 Entries: ${result.data.unit3Entries?.length || 0}\nUnit4 Entries: ${result.data.unit4Entries?.length || 0}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="result error">❌ LOGIN FAILED\n\n${result.message}</div>`;
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="result error">❌ ERROR\n\n${err.message}</div>`;
+            }
+        }
+
+        async function testFetch() {
+            const resultDiv = document.getElementById('fetch-result');
+            resultDiv.innerHTML = '<div class="result info">Fetching data...</div>';
+            
+            try {
+                const payload = {
+                    action: 'fetch_all',
+                    data: {}
+                };
+                
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.innerHTML = `<div class="result success">✅ FETCH SUCCESS!\n\nData Structure:\n${JSON.stringify(result.data, null, 2).substring(0, 500)}...\n\nWorkers: ${result.data.workers?.length || 0}\nUnit1 Entries: ${result.data.unit1Entries?.length || 0}\nUnit2 Entries: ${result.data.unit2Entries?.length || 0}\nUnit3 Entries: ${result.data.unit3Entries?.length || 0}\nUnit4 Entries: ${result.data.unit4Entries?.length || 0}\nUsers: ${result.data.users?.length || 0}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="result error">❌ FETCH FAILED\n\n${result.message}</div>`;
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="result error">❌ ERROR\n\n${err.message}</div>`;
+            }
+        }
+
+        async function testSync() {
+            const resultDiv = document.getElementById('sync-result');
+            resultDiv.innerHTML = '<div class="result info">Syncing test data...</div>';
+            
+            try {
+                const payload = {
+                    action: 'sync_all',
+                    data: {
+                        workers: [
+                            { id: 'test1', name: 'Test Worker', empId: 'TEST001', type: 'daily', unit: 'unit1' }
+                        ],
+                        unit1Entries: [
+                            { id: 'entry1', workerId: 'test1', date: '2026-05-31', wage: 500, output: 10 }
+                        ],
+                        unit2Entries: [],
+                        unit3Entries: [],
+                        unit4Entries: [],
+                        unit1Attendance: [
+                            { workerId: 'test1', date: '2026-05-31', status: 'present', otAmount: 0, advance: 0 }
+                        ],
+                        unit2Attendance: [],
+                        unit3Attendance: [],
+                        unit4Attendance: [],
+                        maintenance: [],
+                        users: []
+                    }
+                };
+                
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.innerHTML = `<div class="result success">✅ SYNC SUCCESS!\n\n${result.message}\n\nTest data has been written to your Google Sheets.</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="result error">❌ SYNC FAILED\n\n${result.message}</div>`;
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="result error">❌ ERROR\n\n${err.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>

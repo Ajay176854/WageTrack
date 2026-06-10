@@ -18,26 +18,24 @@
     <!-- HEADER -->
     <header class="header hidden" id="main-header">
       <div class="header-title">
-        <div class="header-logo">WT</div>
-        Wage<span>Track</span> <small style="font-size:10px; color:var(--accent); opacity:0.8;">v2.1</small>
+        <div class="header-logo" style="position:relative; background:transparent; box-shadow:none; cursor:pointer;" onclick="openModal('modal-cloud-repair')">
+          <img src="logo.png" style="width:100%; height:100%; object-fit:contain;">
+          <div id="cloud-status-dot" style="position:absolute; top:-2px; right:-2px; width:8px; height:8px; border-radius:50%; background:var(--accent2); border:1px solid var(--surface);"></div>
+        </div>
+        Wage<span>Track</span>
       </div>
-      <div style="display:flex; align-items:center; gap:12px;">
-        <button class="pill-btn secondary" id="sync-btn" onclick="syncData()" style="width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:10px; background:var(--surface-raised); border-color:var(--border); color:var(--text-muted);">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="nav-btn admin-only hidden" onclick="switchScreen('users', this)" style="width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--surface-raised); border:1px solid var(--border); color:var(--accent);">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+          </svg>
+        </button>
+        <button class="pill-btn secondary" onclick="fetchAll()" style="width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--surface-raised); border:1px solid var(--border); color:var(--accent);">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-4.4 3.6-8 8-8 3.3 0 6.2 2 7.4 5M22 12c0 4.4-3.6 8-8 8-3.3 0-6.2-2-7.4-5" />
           </svg>
         </button>
-        <button class="pill-btn secondary" onclick="testCloudConnection()" title="Diagnose Connection" style="width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:10px; background:var(--surface-raised); border-color:var(--border); color:var(--accent);">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-          </svg>
-        </button>
-        <div style="background:rgba(240,192,64,0.1); border:1px solid rgba(240,192,64,0.3); padding:6px 14px; border-radius:12px; font-size:12px; font-family:var(--mono); color:var(--accent); font-weight:700; letter-spacing:-0.2px; box-shadow:0 2px 10px rgba(0,0,0,0.2);" id="worker-count-badge">0 workers</div>
-        <button class="pill-btn secondary" onclick="doLogout()" style="width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:10px; background:var(--surface-raised); border-color:var(--border);">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
-        </button>
+        <div style="background:rgba(240,192,64,0.1); border:1px solid rgba(240,192,64,0.3); padding:4px 10px; border-radius:10px; font-size:11px; font-family:var(--mono); color:var(--accent); font-weight:700;" id="worker-count-badge">0 workers</div>
       </div>
     </header>
 
@@ -46,16 +44,19 @@
       <div class="login-container">
         <div class="login-card">
           <div class="header-title" style="text-align:center; font-size:28px; margin-bottom:10px; justify-content:center;">
-            <div class="header-logo" style="width:36px; height:36px; font-size:24px; border-radius:8px;">WT</div>
+            <div class="header-logo" style="width:48px; height:48px; background:transparent; box-shadow:none;"><img src="logo.png" style="width:100%; height:100%; object-fit:contain;"></div>
             Wage<span>Track</span>
           </div>
-          <div class="login-title">Welcome Back</div>
-          <div class="login-subtitle">Please login to manage worker salaries</div>
-          <div class="form-group" style="margin:0 0 16px;">
+          <div class="login-subtitle">Enter your details to sync with cloud</div>
+          <div class="form-group">
+            <label class="form-label" for="l-email">EMAIL ADDRESS</label>
+            <input class="form-input" id="l-email" type="email" placeholder="e.g. supervisor@gmail.com" />
+          </div>
+          <div class="form-group">
             <label class="form-label" for="l-user">USERNAME</label>
             <input class="form-input" id="l-user" placeholder="Enter username" />
           </div>
-          <div class="form-group" style="margin:0 0 24px;">
+          <div class="form-group">
             <label class="form-label" for="l-pass">PASSWORD</label>
             <input class="form-input" id="l-pass" type="password" placeholder="Enter password" />
           </div>
@@ -66,19 +67,19 @@
 
     <!-- SCREEN: HOME -->
     <div class="screen" id="screen-home" style="padding-top: 8px;">
-      <div class="dashboard-card" style="border: 1px solid rgba(240,192,64,0.3); background:#000000; display:block;">
+      <div class="dashboard-card" style="border: 1px solid var(--accent-glow);">
         <div class="dash-grid">
           <div class="dash-stat">
-            <div class="dash-stat-val" id="dash-active-workers" style="color:#ffffff !important; font-size: 24px;">0 / 0</div>
-            <div class="dash-stat-label" style="color:#f0c040 !important;">Workers</div>
+            <div class="dash-stat-val" id="dash-active-workers">0 / 0</div>
+            <div class="dash-stat-label">Workers</div>
           </div>
-          <div class="dash-stat" style="border-left:1px solid rgba(255,255,255,0.08); border-right:1px solid rgba(255,255,255,0.08);">
-            <div class="dash-stat-val" id="dash-total-kg" style="color:#ffffff !important; font-size: 24px;">0 kg</div>
-            <div class="dash-stat-label" style="color:#f0c040 !important;">Total Output</div>
+          <div class="dash-stat" style="border-left:1px solid var(--border); border-right:1px solid var(--border);">
+            <div class="dash-stat-val" id="dash-total-kg">0 kg</div>
+            <div class="dash-stat-label">Total Output</div>
           </div>
           <div class="dash-stat">
-            <div class="dash-stat-val" id="dash-total-wage" style="color:#ffffff !important; font-size: 24px;">₹0</div>
-            <div class="dash-stat-label" style="color:#f0c040 !important;">Today's Total</div>
+            <div class="dash-stat-val" id="dash-total-wage">₹0</div>
+            <div class="dash-stat-label">Today's Total</div>
           </div>
         </div>
       </div>
@@ -94,20 +95,21 @@
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
-          <div class="action-btn-text">Quick Assign</div>
+          <div class="action-btn-text">Unit-wise Quick Assign</div>
         </div>
         <div class="action-btn primary" style="grid-column: span 2; flex-direction: row; height: 50px;" onclick="openAddEntry()">
           <span style="font-size: 24px; font-weight: 300;">+</span>
           <div class="action-btn-text" style="font-size: 15px;">New Daily Entry</div>
         </div>
       </div>
-      <div class="report-tabs-container">
-        <div class="report-tab active" id="prod-tab-all" onclick="switchProductionTab('all')">All</div>
-        <div class="report-tab" id="prod-tab-1" onclick="switchProductionTab('daily')">Prod 1</div>
-        <div class="report-tab" id="prod-tab-2" onclick="switchProductionTab('permanent')">Prod 2</div>
-        <div class="report-tab" id="prod-tab-3" onclick="switchProductionTab('packing')">Prod 3</div>
-        <div class="report-tab" id="prod-tab-4" onclick="switchProductionTab('other')">Prod 4</div>
-      </div>
+        <div class="report-tabs-container">
+          <div class="report-tab active" id="prod-tab-all" onclick="switchProductionTab('all')">All</div>
+          <div class="report-tab" id="prod-tab-1" onclick="switchProductionTab('unit1')">Unit 1</div>
+          <div class="report-tab" id="prod-tab-2" onclick="switchProductionTab('unit2')">Unit 2</div>
+          <div class="report-tab" id="prod-tab-3" onclick="switchProductionTab('unit3')">Unit 3</div>
+          <div class="report-tab" id="prod-tab-4" onclick="switchProductionTab('unit4')">Unit 4</div>
+          <div class="report-tab admin-only hidden" id="prod-tab-maintenance" onclick="switchProductionTab('maintenance')">Maintenance</div>
+        </div>
       <div id="today-entries-list" style="margin-top: 12px;"></div>
     </div>
 
@@ -116,7 +118,7 @@
       <div class="section-head">
         <h2>WORKERS</h2>
         <div style="display:flex;gap:6px;">
-          <button class="pill-btn secondary" onclick="uploadToDrive()" style="font-size:11px;padding:6px 10px;display:flex;align-items:center;gap:4px;">
+          <button class="pill-btn secondary admin-only hidden" onclick="uploadToDrive()" style="font-size:11px;padding:6px 10px;display:flex;align-items:center;gap:4px;">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
               <path d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 15L6.3 21h13.12l3.43-6M18.73 15L12 3.5 8.57 9.5 15.29 21z" />
             </svg> Drive
@@ -144,10 +146,10 @@
       </div>
       <div class="report-tabs-container">
         <div class="report-tab active" id="report-prod-all" onclick="switchReportProductionTab('all')">All</div>
-        <div class="report-tab" id="report-prod-1" onclick="switchReportProductionTab('daily')">Prod 1</div>
-        <div class="report-tab" id="report-prod-2" onclick="switchReportProductionTab('permanent')">Prod 2</div>
-        <div class="report-tab" id="report-prod-3" onclick="switchReportProductionTab('packing')">Prod 3</div>
-        <div class="report-tab" id="report-prod-4" onclick="switchReportProductionTab('other')">Prod 4</div>
+        <div class="report-tab" id="report-prod-1" onclick="switchReportProductionTab('unit1')">Unit 1</div>
+        <div class="report-tab" id="report-prod-2" onclick="switchReportProductionTab('unit2')">Unit 2</div>
+        <div class="report-tab" id="report-prod-3" onclick="switchReportProductionTab('unit3')">Unit 3</div>
+        <div class="report-tab" id="report-prod-4" onclick="switchReportProductionTab('unit4')">Unit 4</div>
       </div>
       <div style="margin:0 var(--container-pad) 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px;">
         <div style="font-size:10px;font-family:var(--mono);color:var(--text-muted);letter-spacing:0.5px;margin-bottom:8px;">PERIOD</div>
@@ -170,15 +172,24 @@
             </div>
           </div>
         </div>
+        <label class="form-label" for="category-filter-select">CATEGORY</label>
+        <select class="form-input" id="category-filter-select" onchange="onCategoryFilterChange(this.value)" style="margin-bottom:12px;">
+          <option value="all">All Categories</option>
+          <option value="piece_work">Piece Work</option>
+          <option value="monthly_salary">Monthly Salary</option>
+          <option value="bundle_packing">Bundle Packing</option>
+          <option value="cover_packing">Cover Packing</option>
+          <option value="daily_wages">Daily Wages</option>
+        </select>
         <label class="form-label" for="worker-filter-select">WORKER</label>
         <select class="form-input" id="worker-filter-select" onchange="onWorkerFilterChange(this.value)"></select>
       </div>
       <div style="margin:0 16px 10px;display:flex;align-items:center;justify-content:space-between;">
         <div id="period-badge" style="font-size:12px;font-family:var(--mono);color:var(--accent);background:rgba(240,192,64,0.1);border:1px solid rgba(240,192,64,0.3);padding:5px 12px;border-radius:8px;">Today</div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <a href="#" onclick="openCloudRepairModal(); return false;" style="font-size:10px; color:var(--text-muted); text-decoration:none; margin-right:8px;">Cloud Status</a>
+          <a href="#" onclick="openCloudRepairModal(); return false;" class="admin-only hidden" style="font-size:10px; color:var(--text-muted); text-decoration:none; margin-right:8px;">Cloud Status</a>
           <button class="pill-btn secondary" onclick="exportReportPDF()" style="font-size:11px;">&#8595; PDF</button>
-          <button class="pill-btn secondary" onclick="cloudSyncReport()" style="font-size:11px;">Drive</button>
+          <button class="pill-btn secondary admin-only hidden" onclick="cloudSyncReport()" style="font-size:11px;">Drive</button>
         </div>
       </div>
       <div id="report-content"></div>
@@ -188,7 +199,10 @@
     <div class="screen" id="screen-leaderboard">
       <div style="padding:14px 16px 10px; display:flex; align-items:center; justify-content:space-between;">
         <div style="font-size:18px;font-weight:800;">Top Performers</div>
-        <button class="pill-btn secondary" onclick="closeLeaderboard()">Close</button>
+        <div style="display:flex; gap:6px;">
+          <button class="pill-btn secondary" onclick="exportLeaderboardPDF()" style="font-size:11px;">&#8595; PDF</button>
+          <button class="pill-btn secondary" onclick="closeLeaderboard()">Close</button>
+        </div>
       </div>
       <div class="report-tabs-container" style="margin-bottom:12px; height: 44px;">
         <div class="report-tab active" id="lb-tab-daily" onclick="renderLeaderboard('daily')">Daily</div>
@@ -210,6 +224,13 @@
       <div style="margin:0 16px 12px;">
         <label class="form-label" for="att-date">Attendance Date</label>
         <input type="date" id="att-date" class="form-input" onchange="renderAttendanceList()" />
+      </div>
+      <div class="report-tabs-container" style="margin-bottom:12px;">
+        <div class="report-tab active" id="att-tab-all" onclick="switchAttendanceUnit('all')">All</div>
+        <div class="report-tab" id="att-tab-unit1" onclick="switchAttendanceUnit('unit1')">Unit 1</div>
+        <div class="report-tab" id="att-tab-unit2" onclick="switchAttendanceUnit('unit2')">Unit 2</div>
+        <div class="report-tab" id="att-tab-unit3" onclick="switchAttendanceUnit('unit3')">Unit 3</div>
+        <div class="report-tab" id="att-tab-unit4" onclick="switchAttendanceUnit('unit4')">Unit 4</div>
       </div>
       <div id="attendance-list" style="padding:0 16px;"></div>
     </div>
@@ -240,10 +261,10 @@
           <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
         </svg>Reports
       </button>
-      <button class="nav-btn admin-only hidden" id="nav-users" onclick="switchScreen('users',this)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-        </svg>Users
+      <button class="nav-btn" onclick="doLogout()" style="color:var(--danger);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+        </svg>Logout
       </button>
     </div>
 
@@ -257,12 +278,48 @@
           <div class="form-group" style="padding:0;"><label class="form-label">Phone</label><input class="form-input" id="w-phone" /></div>
         </div>
         <div class="form-group" style="padding:0 16px;"><label class="form-label">Name</label><input class="form-input" id="w-name" /></div>
-        <div class="form-group" style="padding:0 16px;"><label class="form-label">Type</label>
-          <select class="form-input" id="w-type" onchange="toggleWorkerTypeFields(this.value)">
-            <option value="daily">Daily</option><option value="permanent">Fixed</option><option value="packing">Packing</option><option value="other">Other</option>
+        <div class="form-group" style="padding:0 16px;">
+          <label class="form-label">UNIT</label>
+          <select class="form-input" id="w-unit">
+            <option value="unit1">Unit 1</option>
+            <option value="unit2">Unit 2</option>
+            <option value="unit3">Unit 3</option>
+            <option value="unit4">Unit 4</option>
           </select>
         </div>
-        <div id="w-salary-group" class="form-group hidden" style="padding:0 16px;"><label class="form-label">Salary</label><input class="form-input" id="w-salary" type="number" /></div>
+        <div class="form-group" style="padding:0 16px;">
+          <label class="form-label">CATEGORY</label>
+          <select class="form-input" id="w-category" onchange="toggleWorkerTypeFields(this.value)">
+            <option value="piece_work">Piece Work</option>
+            <option value="bundle_packing">Bundle Packing</option>
+            <option value="cover_packing">Cover Packing</option>
+            <option value="monthly_salary">Monthly Salary</option>
+            <option value="daily_wages">Daily Wages</option>
+          </select>
+        </div>
+        <div id="w-salary-group" class="form-group hidden" style="padding:0 16px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div><label class="form-label">Salary</label><input class="form-input" id="w-salary" type="number" /></div>
+            <div><label class="form-label">OT Rate (hr)</label><input class="form-input" id="w-ot-rate" type="number" /></div>
+          </div>
+          <div class="form-group" style="margin-top:12px;">
+            <label class="form-label">PAID LEAVES (days/month)</label>
+            <input class="form-input" id="w-paid-leaves" type="number" placeholder="e.g. 2" min="0" />
+          </div>
+        </div>
+        <div id="w-packing-group" class="form-group hidden" style="padding:0 16px;">
+           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div><label class="form-label">Flat Amount</label><input class="form-input" id="w-flat-amount" type="number" oninput="if(this.value > 0) document.getElementById('w-ot-rate-pack').required=false;" /></div>
+            <div><label class="form-label">OT Rate (hr)</label><input class="form-input" id="w-ot-rate-pack" type="number" /></div>
+          </div>
+        </div>
+        <div id="w-daily-group" class="form-group hidden" style="padding:0 16px;">
+          <label class="form-label">Default OT Rate (hr)</label><input class="form-input" id="w-ot-rate-daily" type="number" />
+          <div class="form-group" style="margin-top:12px;">
+            <label class="form-label">DAILY WAGE AMOUNT (₹)</label>
+            <input class="form-input" id="w-daily-wage" type="number" placeholder="e.g. 500" min="0" />
+          </div>
+        </div>
         <div class="modal-actions">
           <button class="pill-btn danger admin-only hidden" id="w-delete-btn" onclick="deleteWorker()" style="margin-right:auto;">DELETE</button>
           <button class="pill-btn" onclick="saveWorker()">SAVE</button>
@@ -283,11 +340,40 @@
     <div class="modal-overlay" id="modal-entry">
       <div class="modal">
         <div class="modal-title"><span id="entry-modal-title">Entry</span><button class="pill-btn secondary" onclick="closeModal('modal-entry')">CLOSE</button></div>
-        <input type="hidden" id="e-id" /><div class="form-group" style="padding:0 16px;"><label class="form-label">Worker</label><select class="form-input" id="e-worker"></select></div>
+        <input type="hidden" id="e-id" />
+        <div class="form-group" style="padding:0 16px;">
+          <label class="form-label">UNIT TYPE</label>
+          <select class="form-input" id="e-unit-type" onchange="onUnitTypeChange()">
+            <option value="">-- Select Unit --</option>
+            <option value="unit1">Unit 1</option>
+            <option value="unit2">Unit 2</option>
+            <option value="unit3">Unit 3</option>
+            <option value="unit4">Unit 4</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+        </div>
+        <div class="form-group hidden" id="e-category-group" style="padding:0 16px;">
+          <label class="form-label">CATEGORY</label>
+          <select class="form-input" id="e-category" onchange="onCategoryChange()">
+            <option value="">-- Select Category --</option>
+          </select>
+        </div>
+        <div class="form-group" style="padding:0 16px;">
+          <label class="form-label">Worker</label>
+          <select class="form-input" id="e-worker" onchange="onWorkerChange()">
+            <option value="">-- Select Worker --</option>
+          </select>
+        </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:0 16px;"><div class="form-group"><label class="form-label">Date</label><input class="form-input" id="e-date" type="date" /></div><div class="form-group" id="e-rate-field"><label class="form-label">Rate</label><input class="form-input" id="e-rate" type="number" oninput="calcPreview()" /></div></div>
         <div id="e-kg-fields-container" style="padding:0 16px;"><div class="form-group hidden" id="e-kg-fields"><label class="form-label">Morning KG</label><input class="form-input" id="e-assigned-morning" type="number" oninput="syncKgFromAssigned()" /></div><div class="form-group hidden" id="e-kg-fields-2"><label class="form-label">Afternoon KG</label><input class="form-input" id="e-assigned-afternoon" type="number" oninput="syncKgFromAssigned()" /></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;" id="e-kg-sync-row" class="hidden"><div class="form-group"><label class="form-label">Completed</label><input class="form-input" id="e-output-kg" type="number" oninput="syncKgFromOutput()" /></div><div class="form-group"><label class="form-label">Balance</label><input class="form-input" id="e-not-completed" type="number" oninput="syncKgFromBalance()" /></div></div></div>
-        <div class="form-group hidden" id="e-packing-pieces" style="padding:0 16px;"><label class="form-label">Pieces</label><input class="form-input" id="e-pack-pieces" type="number" oninput="calcPreview()" /></div>
-        <div class="form-group hidden" id="e-work-desc" style="padding:0 16px;"><label class="form-label">Work</label><input class="form-input" id="e-work-name" oninput="calcPreview()" /></div>
+        <div class="form-group hidden" id="e-packing-pieces" style="padding:0 16px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+            <div><label class="form-label">Pieces</label><input class="form-input" id="e-pack-pieces" type="number" oninput="calcPreview()" /></div>
+            <div><label class="form-label">Rate</label><input class="form-input" id="e-pack-rate" type="number" oninput="calcPreview()" /></div>
+            <div><label class="form-label">Flat Amount</label><input class="form-input" id="e-pack-amount" type="number" oninput="calcPreview()" /></div>
+          </div>
+        </div>
+        <div class="form-group hidden" id="e-work-desc" style="padding:0 16px;"><label class="form-label">Work Description</label><input class="form-input" id="e-work-name" oninput="calcPreview()" /></div>
         <div class="form-group hidden" id="e-payment-field" style="padding:0 16px;"><label class="form-label">Amount</label><input class="form-input" id="e-payment" type="number" oninput="calcPreview()" /></div>
         <div style="padding:0 16px;"><div class="card" id="wage-preview" style="display:none;"><div id="preview-amount">₹0</div><div id="preview-calc"></div></div></div>
         <div class="modal-actions">
@@ -311,9 +397,48 @@
 
     <!-- Modal: Quick Assign Menu -->
     <div class="modal-overlay" id="modal-quick-assign-menu">
-      <div class="modal">
-        <div class="modal-title">Quick Assign</div>
-        <div class="modal-actions" style="flex-direction: column; gap: 10px;"><button class="pill-btn" onclick="openQuickAssign('daily')">Prod 1 (Daily)</button><button class="pill-btn" onclick="openQuickAssign('packing')">Prod 3 (Packing)</button><button class="pill-btn secondary" onclick="closeModal('modal-quick-assign-menu')">CANCEL</button></div>
+      <div class="modal" style="max-height: 85vh; overflow-y: auto;">
+        <div class="modal-title">Unit-wise Quick Assign</div>
+        <div style="padding: 0 16px 16px; max-height: 60vh; overflow-y: auto;">
+          <!-- Unit 1 -->
+          <div style="margin-bottom: 16px;">
+            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); letter-spacing: 1px; margin-bottom: 8px; padding-left: 4px;">UNIT 1</div>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit1', 'piece_work')">Piece Work</button>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit1', 'bundle_packing')">Bundle Packing</button>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit1', 'cover_packing')">Cover Packing</button>
+            <button class="pill-btn" style="width: 100%;" onclick="openQuickAssign('unit1', 'daily_wages')">Daily Wages</button>
+          </div>
+          
+          <!-- Unit 2 -->
+          <div style="margin-bottom: 16px;">
+            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); letter-spacing: 1px; margin-bottom: 8px; padding-left: 4px;">UNIT 2</div>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit2', 'piece_work')">Piece Work</button>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit2', 'bundle_packing')">Bundle Packing</button>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit2', 'cover_packing')">Cover Packing</button>
+            <button class="pill-btn" style="width: 100%;" onclick="openQuickAssign('unit2', 'daily_wages')">Daily Wages</button>
+          </div>
+          
+          <!-- Unit 3 -->
+          <div style="margin-bottom: 16px;">
+            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); letter-spacing: 1px; margin-bottom: 8px; padding-left: 4px;">UNIT 3</div>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit3', 'piece_work')">Piece Work</button>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit3', 'bundle_packing')">Bundle Packing</button>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit3', 'cover_packing')">Cover Packing</button>
+            <button class="pill-btn" style="width: 100%;" onclick="openQuickAssign('unit3', 'daily_wages')">Daily Wages</button>
+          </div>
+          
+          <!-- Unit 4 -->
+          <div style="margin-bottom: 16px;">
+            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); letter-spacing: 1px; margin-bottom: 8px; padding-left: 4px;">UNIT 4</div>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit4', 'piece_work')">Piece Work</button>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit4', 'bundle_packing')">Bundle Packing</button>
+            <button class="pill-btn" style="width: 100%; margin-bottom: 6px;" onclick="openQuickAssign('unit4', 'cover_packing')">Cover Packing</button>
+            <button class="pill-btn" style="width: 100%;" onclick="openQuickAssign('unit4', 'daily_wages')">Daily Wages</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="pill-btn secondary" onclick="closeModal('modal-quick-assign-menu')">CANCEL</button>
+        </div>
       </div>
     </div>
 
@@ -351,7 +476,7 @@
                 To fix the "doget not found" error, you must update your Google Apps Script code.
             </div>
             
-            <button class="pill-btn" style="width:100%; margin-bottom:12px; height:44px;" onclick="copyScriptToClipboard()">📋 COPY SCRIPT v2.5</button>
+            <button class="pill-btn" style="width:100%; margin-bottom:12px; height:44px;" onclick="copyScriptToClipboard()">📋 COPY SCRIPT v6.0</button>
             <button class="pill-btn secondary" style="width:100%; margin-bottom:15px;" onclick="runInAppDiagnostics()">⚡ TEST CONNECTION</button>
             
             <div style="font-size:11px; color:var(--text-muted); background:rgba(255,255,255,0.05); padding:10px; border-radius:8px;">

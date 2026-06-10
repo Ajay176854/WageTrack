@@ -16,7 +16,10 @@ function renderAll() {
   let visibleWorkerCount = workers.length;
   if (currentUser.role === 'supervisor') {
     const accessible = getAccessibleProductions();
-    visibleWorkerCount = workers.filter(w => accessible.includes(w.type || 'daily')).length;
+    visibleWorkerCount = workers.filter(w => {
+      const workerUnit = w.unit || getProdKey(w.category || w.type || 'daily');
+      return accessible.includes(workerUnit);
+    }).length;
   }
   const badge = document.getElementById('worker-count-badge');
   if (badge) badge.textContent = visibleWorkerCount + ' worker' + (visibleWorkerCount !== 1 ? 's' : '');
@@ -31,62 +34,91 @@ function renderAll() {
   // Hide/show production tabs based on supervisor access
   if (currentUser.role === 'supervisor') {
     const accessible = getAccessibleProductions();
-    if (document.getElementById('prod-tab-1')) document.getElementById('prod-tab-1').style.display = accessible.includes('daily') ? 'flex' : 'none';
-    if (document.getElementById('prod-tab-2')) document.getElementById('prod-tab-2').style.display = accessible.includes('permanent') ? 'flex' : 'none';
-    if (document.getElementById('prod-tab-3')) document.getElementById('prod-tab-3').style.display = accessible.includes('packing') ? 'flex' : 'none';
-    if (document.getElementById('prod-tab-4')) document.getElementById('prod-tab-4').style.display = accessible.includes('other') ? 'flex' : 'none';
+    if (document.getElementById('prod-tab-1')) document.getElementById('prod-tab-1').style.display = accessible.includes('unit1') ? 'flex' : 'none';
+    if (document.getElementById('prod-tab-2')) document.getElementById('prod-tab-2').style.display = accessible.includes('unit2') ? 'flex' : 'none';
+    if (document.getElementById('prod-tab-3')) document.getElementById('prod-tab-3').style.display = accessible.includes('unit3') ? 'flex' : 'none';
+    if (document.getElementById('prod-tab-4')) document.getElementById('prod-tab-4').style.display = accessible.includes('unit4') ? 'flex' : 'none';
+
+    // Show maintenance tab only if supervisor has maintenance permission
+    if (document.getElementById('prod-tab-maintenance')) {
+      document.getElementById('prod-tab-maintenance').style.display = hasMaintenancePermission() ? 'flex' : 'none';
+    }
 
     if (document.getElementById('prod-tab-all')) document.getElementById('prod-tab-all').style.display = accessible.length > 1 ? 'flex' : 'none';
 
-    if (!accessible.includes(currentProductionTab) && currentProductionTab !== 'all') {
+    if (!accessible.includes(currentProductionTab) && currentProductionTab !== 'all' && currentProductionTab !== 'maintenance') {
       if (accessible.length > 0) switchProductionTab(accessible[0]);
     } else if (currentProductionTab === 'all' && accessible.length === 1) {
       switchProductionTab(accessible[0]);
+    } else if (currentProductionTab === 'maintenance' && !hasMaintenancePermission()) {
+      // If on maintenance tab but no permission, switch to first accessible unit
+      if (accessible.length > 0) switchProductionTab(accessible[0]);
     }
-
-    updateActionButtons();
   } else {
     // Admin sees all tabs
-    ['all', '1', '2', '3', '4'].forEach(id => {
-      const el = document.getElementById(id === 'all' ? 'prod-tab-all' : 'prod-tab-' + id);
+    ['all', '1', '2', '3', '4', 'maintenance'].forEach(id => {
+      const el = document.getElementById(id === 'all' ? 'prod-tab-all' : id === 'maintenance' ? 'prod-tab-maintenance' : 'prod-tab-' + id);
       if (el) el.style.display = 'flex';
     });
   }
+  updateActionButtons();
 }
 
 function updateActionButtons() {
   if (!currentUser || currentUser.role === 'admin') {
-    document.querySelectorAll('[onclick*="openAttendance"]').forEach(el => el.style.display = '');
-    document.querySelectorAll('[onclick*="openQuickAssignMenu"]').forEach(el => el.style.display = '');
-    document.querySelectorAll('[onclick*="openAddEntry"]').forEach(el => el.style.display = '');
+    document.querySelectorAll('[onclick*="openAttendance"]').forEach(el => el.style.display = 'flex');
+    document.querySelectorAll('[onclick*="openQuickAssignMenu"]').forEach(el => el.style.display = 'flex');
+    document.querySelectorAll('[onclick*="openAddEntry"]').forEach(el => el.style.display = 'flex');
     return;
   }
 
   const accessible = getAccessibleProductions();
   if (currentProductionTab === 'all') {
     const hasAnyAttendance = accessible.some(prod => hasActionPermission(prod, 'attendance'));
+    const hasAnyWork = accessible.some(prod => hasActionPermission(prod, 'work'));
     const hasAnyPayment = accessible.some(prod => hasActionPermission(prod, 'payment'));
 
-    document.querySelectorAll('[onclick*="openAttendance"]').forEach(el => el.style.display = hasAnyAttendance ? '' : 'none');
-    document.querySelectorAll('[onclick*="openQuickAssignMenu"]').forEach(el => el.style.display = hasAnyPayment ? '' : 'none');
-    document.querySelectorAll('[onclick*="openAddEntry"]').forEach(el => el.style.display = hasAnyPayment ? '' : 'none');
+    document.querySelectorAll('[onclick*="openAttendance"]').forEach(el => el.style.display = hasAnyAttendance ? 'flex' : 'none');
+    document.querySelectorAll('[onclick*="openQuickAssignMenu"]').forEach(el => el.style.display = hasAnyWork ? 'flex' : 'none');
+    document.querySelectorAll('[onclick*="openAddEntry"]').forEach(el => el.style.display = (hasAnyWork || hasAnyPayment) ? 'flex' : 'none');
   } else {
     const hasAttendancePerm = hasActionPermission(currentProductionTab, 'attendance');
+    const hasWorkPerm = hasActionPermission(currentProductionTab, 'work');
     const hasPaymentPerm = hasActionPermission(currentProductionTab, 'payment');
 
-    document.querySelectorAll('[onclick*="openAttendance"]').forEach(el => el.style.display = hasAttendancePerm ? '' : 'none');
-    document.querySelectorAll('[onclick*="openQuickAssignMenu"]').forEach(el => el.style.display = hasPaymentPerm ? '' : 'none');
-    document.querySelectorAll('[onclick*="openAddEntry"]').forEach(el => el.style.display = hasPaymentPerm ? '' : 'none');
+    document.querySelectorAll('[onclick*="openAttendance"]').forEach(el => el.style.display = hasAttendancePerm ? 'flex' : 'none');
+    document.querySelectorAll('[onclick*="openQuickAssignMenu"]').forEach(el => el.style.display = hasWorkPerm ? 'flex' : 'none');
+    document.querySelectorAll('[onclick*="openAddEntry"]').forEach(el => el.style.display = (hasWorkPerm || hasPaymentPerm) ? 'flex' : 'none');
   }
 }
 
 // ── AUTH ─────────────────────────────────────────────────────────────────────
-function doLogin() {
+async function requestCloudAuth(username, password) {
+  try {
+    const response = await fetch(CLOUD_CONFIG.gasUrl, {
+      method: 'POST',
+      mode: 'cors',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'cloud_login',
+        data: { username, password }
+      })
+    });
+    return await response.json();
+  } catch (err) {
+    console.error('Cloud Auth Error:', err);
+    return { success: false, message: 'Connection Error' };
+  }
+}
+
+async function doLogin() {
   try {
     const userEl = document.getElementById('l-user');
     const passEl = document.getElementById('l-pass');
-    if (!userEl || !passEl) return;
+    const btn = document.querySelector('#screen-login button');
 
+    if (!userEl || !passEl) return;
     const user = userEl.value.trim();
     const pass = passEl.value.trim();
 
@@ -95,27 +127,104 @@ function doLogin() {
       return;
     }
 
+    // 1. Try Cloud Login First (Priority)
+    if (btn) { btn.disabled = true; btn.textContent = 'Verifying...'; }
+    showToast('Connecting to cloud...');
+
+    const cloudResult = await requestCloudAuth(user, pass);
+
+    if (btn) { btn.disabled = false; btn.textContent = 'Login'; }
+
+    if (cloudResult && cloudResult.success) {
+      // POPULATE DATA FROM CLOUD (with robust undefined data field safeguards)
+      const d = cloudResult.data || {};
+      if (d.workers !== undefined && d.workers !== null) {
+        window.workers = d.workers || [];
+      }
+      if (d.unit1Entries !== undefined && d.unit1Entries !== null) window.unit1Entries = cleanEntries(deduplicateById(d.unit1Entries || []));
+      if (d.unit2Entries !== undefined && d.unit2Entries !== null) window.unit2Entries = cleanEntries(deduplicateById(d.unit2Entries || []));
+      if (d.unit3Entries !== undefined && d.unit3Entries !== null) window.unit3Entries = cleanEntries(deduplicateById(d.unit3Entries || []));
+      if (d.unit4Entries !== undefined && d.unit4Entries !== null) window.unit4Entries = cleanEntries(deduplicateById(d.unit4Entries || []));
+      if (d.unit1Attendance !== undefined && d.unit1Attendance !== null) window.unit1Attendance = deduplicateAttendance(d.unit1Attendance || []);
+      if (d.unit2Attendance !== undefined && d.unit2Attendance !== null) window.unit2Attendance = deduplicateAttendance(d.unit2Attendance || []);
+      if (d.unit3Attendance !== undefined && d.unit3Attendance !== null) window.unit3Attendance = deduplicateAttendance(d.unit3Attendance || []);
+      if (d.unit4Attendance !== undefined && d.unit4Attendance !== null) window.unit4Attendance = deduplicateAttendance(d.unit4Attendance || []);
+      if (d.maintenance !== undefined && d.maintenance !== null) window.maintenance = cleanEntries(deduplicateById(d.maintenance || []));
+
+      // Clean and parse all fetched supervisor permissions to prevent UI crashes.
+      // Only overwrite the local users array if it was returned and is non-empty,
+      // or if the logging in user is the admin.
+      const isLoggingInAdmin = cloudResult.user && cloudResult.user.role === 'admin';
+      if (d.users !== undefined && d.users !== null && (d.users.length > 0 || isLoggingInAdmin)) {
+        window.users = d.users.map(u => {
+          if (typeof u.access === 'string') {
+            try { u.access = JSON.parse(u.access); } catch (e) { u.access = {}; }
+          }
+          if (!u.access) u.access = {};
+          return u;
+        });
+        if (window.users.length === 0) {
+          window.users = [{ username: 'admin', password: 'admin123', gmail: 'admin@gmail.com', role: 'admin', access: {} }];
+        }
+      }
+
+      currentUser = cloudResult.user;
+      if (currentUser) {
+        if (typeof currentUser.access === 'string') {
+          try { currentUser.access = JSON.parse(currentUser.access); } catch (e) { currentUser.access = {}; }
+        }
+        if (!currentUser.access) currentUser.access = {};
+      }
+
+      // Save to local storage (passing true to preventSync to avoid redundant loops)
+      if (typeof window.save === 'function') window.save(true);
+
+      finishLogin(currentUser);
+      showToast('✓ Cloud Login Successful');
+      return;
+    }
+
+    // 2. Fallback to Local Login (Offline Mode)
+    showToast('Cloud unavailable, checking local credentials...');
     const found = users.find(u => u.username.toLowerCase() === user.toLowerCase() && u.password === pass);
     if (found) {
       currentUser = found;
-      localStorage.setItem('wt_session', JSON.stringify(currentUser));
-      showToast(`Welcome back, ${found.username}!`);
-      checkAuth();
-      renderAll();
-      switchScreen('home', document.querySelector('.nav-btn'));
-    } else {
-      showToast('Invalid username or password');
+      finishLogin(found);
+      showToast('✓ Offline Mode - Using cached data');
+      return;
     }
+
+    // 3. Both failed
+    const msg = cloudResult ? (cloudResult.message || 'Invalid credentials') : 'Connection Error';
+    showToast('❌ ' + msg);
   } catch (e) {
     console.error('Login error:', e);
     showToast('Login Error: ' + e.message);
   }
 }
 
+function finishLogin(userObj) {
+  localStorage.setItem('wt_session', JSON.stringify(userObj));
+  document.body.classList.add('logged-in');
+
+  if (window.checkAuth) checkAuth();
+  renderAll();
+  switchScreen('home', document.querySelector('.nav-btn'));
+  showToast(`Welcome back, ${userObj.username}!`);
+}
+
 function doLogout() {
   currentUser = null;
   localStorage.removeItem('wt_session');
+  document.body.classList.remove('logged-in');
+
+  const loginUser = document.getElementById('l-user');
+  const loginPass = document.getElementById('l-pass');
+  if (loginUser) loginUser.value = '';
+  if (loginPass) loginPass.value = '';
+
   checkAuth();
+  showToast('Logged out');
 }
 
 // ── WORKERS ──────────────────────────────────────────────────────────────────
@@ -127,12 +236,15 @@ function renderWorkers() {
   let visibleWorkers = workers;
   if (currentUser && currentUser.role === 'supervisor') {
     const accessible = getAccessibleProductions();
-    visibleWorkers = workers.filter(w => accessible.includes(w.type || 'daily'));
+    visibleWorkers = workers.filter(w => {
+      const workerUnit = w.unit || getProdKey(w.category || w.type || 'daily');
+      return accessible.includes(workerUnit);
+    });
   }
 
   if (searchVal) {
     visibleWorkers = visibleWorkers.filter(w =>
-      w.name.toLowerCase().includes(searchVal) ||
+      (w.name && w.name.toLowerCase().includes(searchVal)) ||
       (w.empId || '').toLowerCase().includes(searchVal)
     );
   }
@@ -142,32 +254,45 @@ function renderWorkers() {
     return;
   }
 
+  const allEntries = getAllEntries();
+  const allAttendance = getAllAttendance();
+
   list.innerHTML = visibleWorkers.map((w, index) => {
     const now = new Date();
     const monthStr = now.toISOString().substr(0, 7);
-    const pieceTotal = entries.filter(e => e.workerId === w.id && e.date.startsWith(monthStr)).reduce((s, e) => s + e.wage, 0);
-    const monthAtt = attendance.filter(a => a.workerId === w.id && a.date.startsWith(monthStr));
-    const otTotal = monthAtt.reduce((s, a) => s + (a.otAmount || 0), 0);
-    const daysPresent = monthAtt.filter(a => isWorking(a.status)).length;
+    const monthDays = getMonthDays(monthStr + '-01'); // Get actual days in current month
+    const pieceTotal = allEntries.filter(e => e.workerId === w.id && normalizeDate(e.date).startsWith(monthStr)).reduce((s, e) => s + Number(e.wage || 0), 0);
+    const monthAtt = allAttendance.filter(a => a.workerId === w.id && normalizeDate(a.date).startsWith(monthStr));
+    const otTotal = monthAtt.reduce((s, a) => s + Number(a.otAmount || 0), 0);
+    const daysPresent = monthAtt.filter(a => isWorking(a.status)).reduce((acc, a) => acc + (isHalfDay(a.status) ? 0.5 : 1), 0);
     let basePay = pieceTotal;
-    if (w.type === 'permanent') basePay = Math.round(((w.salary || 0) / 30) * daysPresent);
+    if (w.category === 'monthly_salary' || w.type === 'permanent') basePay = Math.round(((Number(w.salary || 0)) / monthDays) * daysPresent);
     const monthGrandTotal = basePay + otTotal;
-    const todayAtt = attendance.find(a => a.workerId === w.id && a.date === todayStr());
-    const todayOT = todayAtt ? (todayAtt.otAmount || 0) : 0;
-    const todayPiece = entries.filter(e => e.workerId === w.id && e.date === todayStr()).reduce((s, e) => s + e.wage, 0);
+    const todayAtt = allAttendance.find(a => a.workerId === w.id && normalizeDate(a.date) === todayStr());
+    const todayOT = todayAtt ? Number(todayAtt.otAmount || 0) : 0;
+    const todayPiece = allEntries.filter(e => e.workerId === w.id && normalizeDate(e.date) === todayStr()).reduce((s, e) => s + Number(e.wage || 0), 0);
     let todayEarned = todayPiece + todayOT;
-    if (w.type === 'permanent' && todayAtt && isWorking(todayAtt.status)) {
+    if ((w.category === 'monthly_salary' || w.type === 'permanent') && todayAtt && isWorking(todayAtt.status)) {
       const mult = isHalfDay(todayAtt.status) ? 0.5 : 1;
-      todayEarned = Math.round((w.salary || 0) / 30 * mult) + todayOT;
+      todayEarned = Math.round((w.salary || 0) / monthDays * mult) + todayOT;
+    }
+    if (w.category === 'daily_wages' && todayAtt && isWorking(todayAtt.status)) {
+      const mult = isHalfDay(todayAtt.status) ? 0.5 : 1;
+      todayEarned = Math.round((w.dailyWage || 0) * mult) + todayOT;
     }
 
     const typeColors = {
-      daily: { color: 'var(--accent)', bg: 'rgba(240,192,64,0.12)', label: 'Prod 1' },
-      permanent: { color: 'var(--accent2)', bg: 'rgba(74,222,128,0.12)', label: 'Prod 2' },
-      packing: { color: '#60a5fa', bg: 'rgba(96,165,250,0.12)', label: 'Prod 3' },
-      other: { color: '#fb923c', bg: 'rgba(251,146,60,0.12)', label: 'Prod 4' }
+      piece_work: { color: 'var(--accent)', bg: 'rgba(184,134,11,0.12)', label: 'Piece Work' },
+      bundle_packing: { color: '#60a5fa', bg: 'rgba(96,165,250,0.12)', label: 'Bundle Pack' },
+      cover_packing: { color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', label: 'Cover Pack' },
+      monthly_salary: { color: 'var(--accent2)', bg: 'rgba(30,126,52,0.12)', label: 'Monthly' },
+      daily_wages: { color: '#fb923c', bg: 'rgba(251,146,60,0.12)', label: 'Daily Wages' },
+      daily: { color: 'var(--accent)', bg: 'rgba(184,134,11,0.12)', label: 'Piece Work' },
+      permanent: { color: 'var(--accent2)', bg: 'rgba(30,126,52,0.12)', label: 'Monthly' },
+      packing: { color: '#60a5fa', bg: 'rgba(96,165,250,0.12)', label: 'Packing' },
+      other: { color: '#fb923c', bg: 'rgba(251,146,60,0.12)', label: 'Other' }
     };
-    const typeInfo = typeColors[w.type || 'daily'];
+    const typeInfo = typeColors[w.category] || typeColors[w.type] || typeColors['piece_work'];
     const typeTag = `<span style="font-size:9px;color:${typeInfo.color};text-transform:uppercase;background:${typeInfo.bg};padding:1px 6px;border-radius:4px;font-weight:800;">${typeInfo.label}</span>`;
     const delay = (index % 10) * 0.05;
 
@@ -175,13 +300,13 @@ function renderWorkers() {
       <div class="list-item reveal" style="animation-delay: ${delay}s" onclick="showWorkerDetails('${w.id}')">
         <div class="item-icon">${w.emoji || '👷'}</div>
         <div class="item-main">
-          <div class="item-title">${w.name} ${typeTag}</div>
-          <div class="item-sub">${w.empId || ''} ${w.phone ? '· ' + w.phone : ''}</div>
-          <div class="item-sub" style="color:var(--accent2); font-weight:700;">₹${monthGrandTotal.toLocaleString()} this month</div>
+          <div class="item-title" style="font-weight:700; color:var(--text-bright);">${w.name} ${typeTag}</div>
+          <div class="item-sub" style="font-size:11px; color:var(--text-muted);">${w.empId || ''} ${w.phone ? '· ' + w.phone : ''}</div>
+          <div class="item-sub" style="color:var(--accent2); font-weight:700; font-size:11px;">₹${monthGrandTotal.toLocaleString()} this month</div>
         </div>
         <div class="item-right">
-          <div class="item-value">${todayEarned > 0 ? '₹' + todayEarned.toLocaleString() : '—'}</div>
-          <div class="item-label">today</div>
+          <div class="item-value" style="font-size:18px; font-weight:800; color:var(--accent);">${todayEarned > 0 ? '₹' + todayEarned.toLocaleString() : '—'}</div>
+          <div class="item-label" style="font-size:9px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">today</div>
         </div>
       </div>`;
   }).join('');
@@ -196,27 +321,38 @@ function showWorkerDetails(wid) {
 
   const historyCont = document.getElementById('w360-content');
   if (historyCont) {
-    const typeLabel = { daily: 'Prod 1 (Daily)', permanent: 'Prod 2 (Fixed)', packing: 'Prod 3 (Packing)', other: 'Prod 4 (Other)' }[w.type || 'daily'];
-    
+    const unitLabel = (w.unit || 'unit1').toUpperCase().replace('UNIT', 'Unit ');
+    const categoryLabels = {
+      piece_work: 'Piece Work',
+      bundle_packing: 'Bundle Packing',
+      cover_packing: 'Cover Packing',
+      monthly_salary: 'Monthly Salary',
+      daily_wages: 'Daily Wages'
+    };
+    const categoryLabel = categoryLabels[w.category] || categoryLabels[w.type === 'permanent' ? 'monthly_salary' : w.type === 'packing' ? 'bundle_packing' : w.type === 'other' ? 'daily_wages' : 'piece_work'];
+    const typeLabel = `${unitLabel} · ${categoryLabel}`;
+
     const now = new Date();
     const monthStr = now.toISOString().substr(0, 7);
-    const mEntries = entries.filter(e => e.workerId === wid && e.date.startsWith(monthStr));
-    const mAtt = attendance.filter(a => a.workerId === wid && a.date.startsWith(monthStr));
-    const wageEarned = mEntries.reduce((s, e) => s + e.wage, 0);
-    const advanceTotal = mAtt.reduce((s, a) => s + (a.advance || 0), 0);
+    const allEntries = getAllEntries();
+    const allAttendance = getAllAttendance();
+    const mEntries = allEntries.filter(e => e.workerId === wid && normalizeDate(e.date).startsWith(monthStr));
+    const mAtt = allAttendance.filter(a => a.workerId === wid && normalizeDate(a.date).startsWith(monthStr));
+    const wageEarned = mEntries.reduce((s, e) => s + Number(e.wage || 0), 0);
+    const advanceTotal = mAtt.reduce((s, a) => s + Number(a.advance || 0), 0);
 
     let rowsHtml = '';
     for (let i = 0; i < 7; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const ds = d.toISOString().split('T')[0];
-        const dayAtt = mAtt.find(a => a.date === ds);
-        const dayEntries = mEntries.filter(e => e.date === ds);
-        if (dayAtt || dayEntries.length > 0) {
-          const status = dayAtt ? dayAtt.status : 'N/A';
-          const wage = dayEntries.reduce((s, e) => s + e.wage, 0);
-          const ot = dayAtt ? (dayAtt.otAmount || 0) : 0;
-          rowsHtml += `
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const ds = d.toISOString().split('T')[0];
+      const dayAtt = mAtt.find(a => normalizeDate(a.date) === ds);
+      const dayEntries = mEntries.filter(e => normalizeDate(e.date) === ds);
+      if (dayAtt || dayEntries.length > 0) {
+        const status = dayAtt ? dayAtt.status : 'N/A';
+        const wage = dayEntries.reduce((s, e) => s + Number(e.wage || 0), 0);
+        const ot = dayAtt ? Number(dayAtt.otAmount || 0) : 0;
+        rowsHtml += `
             <div style="background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:10px; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
               <div>
                 <div style="font-size:12px; font-weight:700; color:var(--text-bright);">${d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
@@ -224,7 +360,7 @@ function showWorkerDetails(wid) {
               </div>
               <div style="font-size:13px; font-weight:700; color:var(--accent);">₹${wage + ot}</div>
             </div>`;
-        }
+      }
     }
 
     historyCont.innerHTML = `
@@ -252,7 +388,9 @@ function showWorkerDetails(wid) {
 
   const editBtn = document.getElementById('w360-edit-btn');
   if (editBtn) {
-    if (currentUser.role === 'admin') {
+    const workerUnit = w.unit || getProdKey(w.category || w.type || 'daily');
+    const hasAccess = currentUser.role === 'admin' || (currentUser.role === 'supervisor' && hasFullUnitAccess(workerUnit));
+    if (hasAccess) {
       editBtn.style.display = 'block';
       editBtn.onclick = () => { closeModal('modal-worker-360'); editWorker(wid); };
     } else {
@@ -265,10 +403,18 @@ function showWorkerDetails(wid) {
 }
 
 function openAddWorker() {
-  if (currentUser.role !== 'admin') {
+  // Check if supervisor has full access to at least one unit
+  if (currentUser.role === 'supervisor') {
+    const hasAnyFullAccess = ['unit1', 'unit2', 'unit3', 'unit4'].some(unit => hasFullUnitAccess(unit));
+    if (!hasAnyFullAccess) {
+      showToast('Permission Denied: Full unit access required to add workers');
+      return;
+    }
+  } else if (currentUser.role !== 'admin') {
     showToast('Permission Denied: Admins only');
     return;
   }
+
   editingWorkerId = null;
   const modal = document.getElementById('modal-worker');
   if (!modal) return;
@@ -277,10 +423,58 @@ function openAddWorker() {
   document.getElementById('w-empid').value = `EMP${nextNum}`;
   document.getElementById('w-phone').value = '';
   document.getElementById('w-name').value = '';
-  document.getElementById('w-type').value = 'daily';
-  document.getElementById('w-salary').value = '';
-  const sag = document.getElementById('w-salary-group');
-  if (sag) sag.classList.add('hidden');
+
+
+  // Reset fields
+  ['w-salary', 'w-ot-rate', 'w-flat-amount', 'w-ot-rate-pack', 'w-ot-rate-daily'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  const unitEl = document.getElementById('w-unit');
+  const catEl = document.getElementById('w-category');
+  const plEl = document.getElementById('w-paid-leaves');
+  const dwEl = document.getElementById('w-daily-wage');
+
+  // For supervisors, set default unit to first accessible unit with full access
+  if (currentUser.role === 'supervisor') {
+    const fullAccessUnits = ['unit1', 'unit2', 'unit3', 'unit4'].filter(unit => hasFullUnitAccess(unit));
+    if (unitEl && fullAccessUnits.length > 0) {
+      unitEl.value = fullAccessUnits[0];
+      // Disable unit selection if only one unit has full access
+      if (fullAccessUnits.length === 1) {
+        unitEl.disabled = true;
+      } else {
+        unitEl.disabled = false;
+        // Filter unit options to show only units with full access
+        Array.from(unitEl.options).forEach(option => {
+          if (option.value && !fullAccessUnits.includes(option.value)) {
+            option.disabled = true;
+            option.style.display = 'none';
+          } else {
+            option.disabled = false;
+            option.style.display = '';
+          }
+        });
+      }
+    }
+  } else {
+    // Admin can select any unit
+    if (unitEl) {
+      unitEl.value = 'unit1';
+      unitEl.disabled = false;
+      Array.from(unitEl.options).forEach(option => {
+        option.disabled = false;
+        option.style.display = '';
+      });
+    }
+  }
+
+  if (catEl) catEl.value = 'piece_work';
+  if (plEl) plEl.value = '';
+  if (dwEl) dwEl.value = '';
+
+  toggleWorkerTypeFields('piece_work');
   modal.classList.add('open');
 }
 
@@ -288,25 +482,53 @@ function saveWorker() {
   const empId = document.getElementById('w-empid').value.trim();
   const phone = document.getElementById('w-phone').value.trim();
   const name = document.getElementById('w-name').value.trim();
-  const type = document.getElementById('w-type').value;
-  const salary = parseFloat(document.getElementById('w-salary').value) || 0;
+
+  const unitEl = document.getElementById('w-unit');
+  const catEl = document.getElementById('w-category');
+  const plEl = document.getElementById('w-paid-leaves');
+  const dwEl = document.getElementById('w-daily-wage');
+
+  const unit = unitEl ? unitEl.value : 'unit1';
+  const category = catEl ? catEl.value : 'piece_work';
+  const paidLeaves = parseFloat(plEl ? plEl.value : 0) || 0;
+  const dailyWage = parseFloat(dwEl ? dwEl.value : 0) || 0;
+
+  // Permission check for supervisors
+  if (currentUser.role === 'supervisor') {
+    if (!hasFullUnitAccess(unit)) {
+      showToast('Permission Denied: Full access to ' + unit.toUpperCase() + ' required');
+      return;
+    }
+  }
+
+  let salary = 0;
+  let otRate = 0;
+  let flatAmount = 0;
+
+  if (category === 'monthly_salary') {
+    salary = parseFloat(document.getElementById('w-salary').value) || 0;
+    otRate = parseFloat(document.getElementById('w-ot-rate').value) || 0;
+  } else if (category === 'bundle_packing' || category === 'cover_packing') {
+    otRate = parseFloat(document.getElementById('w-ot-rate-pack').value) || 0;
+    flatAmount = parseFloat(document.getElementById('w-flat-amount').value) || 0;
+  } else {
+    otRate = parseFloat(document.getElementById('w-ot-rate-daily').value) || 0;
+  }
 
   if (!name) { showToast('ERROR: Worker name is required'); return; }
-  const dupName = workers.find(w => w.name.toLowerCase() === name.toLowerCase() && w.id !== editingWorkerId);
-  if (dupName) { showToast(`ERROR: Worker "${name}" already exists!`); return; }
-  if (type === 'permanent' && salary <= 0) { showToast('ERROR: Monthly salary required for permanent staff'); return; }
+  if (category === 'monthly_salary' && salary <= 0) { showToast('ERROR: Monthly salary required for monthly salary workers'); return; }
   if (!empId) { showToast('ERROR: Employee ID is required'); return; }
-  const dupId = workers.find(w => w.empId.toLowerCase() === empId.toLowerCase() && w.id !== editingWorkerId);
+  const dupId = workers.find(w => w.empId && w.empId.toLowerCase() === empId.toLowerCase() && w.id !== editingWorkerId);
   if (dupId) { showToast(`ERROR: Employee ID ${empId} is already taken!`); return; }
 
   if (editingWorkerId) {
     const idx = workers.findIndex(w => w.id === editingWorkerId);
     if (idx !== -1) {
-      workers[idx] = { ...workers[idx], empId, phone, name, type, salary };
+      workers[idx] = { ...workers[idx], empId, phone, name, salary, otRate, flatAmount, unit, category, paidLeaves, dailyWage };
       showToast('Worker profile updated! ✓');
     }
   } else {
-    workers.push({ id: uid(), empId, phone, name, type, salary, emoji: emojis[workers.length % emojis.length] });
+    workers.push({ id: uid(), empId, phone, name, salary, otRate, flatAmount, emoji: emojis[workers.length % emojis.length], unit, category, paidLeaves, dailyWage });
     showToast(`New worker "${name}" added! ✓`);
   }
   save();
@@ -317,6 +539,16 @@ function saveWorker() {
 function editWorker(wid) {
   const w = workerById(wid);
   if (!w) return;
+
+  // Permission check for supervisors
+  if (currentUser.role === 'supervisor') {
+    const workerUnit = w.unit || getProdKey(w.category || w.type || 'daily');
+    if (!hasFullUnitAccess(workerUnit)) {
+      showToast('Permission Denied: Full access to worker\'s unit required');
+      return;
+    }
+  }
+
   editingWorkerId = wid;
   const modal = document.getElementById('modal-worker');
   if (!modal) return;
@@ -324,9 +556,49 @@ function editWorker(wid) {
   document.getElementById('w-empid').value = w.empId || '';
   document.getElementById('w-phone').value = w.phone || '';
   document.getElementById('w-name').value = w.name || '';
-  document.getElementById('w-type').value = w.type || 'daily';
+  const category = w.category || (w.type === 'permanent' ? 'monthly_salary' : w.type === 'packing' ? 'bundle_packing' : w.type === 'other' ? 'daily_wages' : 'piece_work');
   document.getElementById('w-salary').value = w.salary || '';
-  toggleWorkerTypeFields(w.type || 'daily');
+
+  if (category === 'monthly_salary') {
+    document.getElementById('w-ot-rate').value = w.otRate || '';
+  } else if (category === 'bundle_packing' || category === 'cover_packing') {
+    document.getElementById('w-ot-rate-pack').value = w.otRate || '';
+    document.getElementById('w-flat-amount').value = w.flatAmount || '';
+  } else {
+    document.getElementById('w-ot-rate-daily').value = w.otRate || '';
+  }
+
+  const unitEl = document.getElementById('w-unit');
+  const catEl = document.getElementById('w-category');
+  const plEl = document.getElementById('w-paid-leaves');
+  const dwEl = document.getElementById('w-daily-wage');
+  if (unitEl) {
+    unitEl.value = w.unit || 'unit1';
+    // For supervisors, restrict unit changes to only units they have full access to
+    if (currentUser.role === 'supervisor') {
+      const fullAccessUnits = ['unit1', 'unit2', 'unit3', 'unit4'].filter(unit => hasFullUnitAccess(unit));
+      Array.from(unitEl.options).forEach(option => {
+        if (option.value && !fullAccessUnits.includes(option.value)) {
+          option.disabled = true;
+          option.style.display = 'none';
+        } else {
+          option.disabled = false;
+          option.style.display = '';
+        }
+      });
+    } else {
+      // Admin can change to any unit
+      Array.from(unitEl.options).forEach(option => {
+        option.disabled = false;
+        option.style.display = '';
+      });
+    }
+  }
+  if (catEl) catEl.value = w.category || 'piece_work';
+  if (plEl) plEl.value = w.paidLeaves || '';
+  if (dwEl) dwEl.value = w.dailyWage || '';
+
+  toggleWorkerTypeFields(category);
   document.getElementById('w-delete-btn').classList.remove('hidden');
   modal.classList.add('open');
 }
@@ -338,8 +610,19 @@ function deleteWorker() {
 
   if (confirm(`Are you sure you want to delete ${w.name}? All their attendance and work entries will be lost forever.`)) {
     workers = workers.filter(x => x.id !== editingWorkerId);
-    entries = entries.filter(x => x.workerId !== editingWorkerId);
-    attendance = attendance.filter(x => x.workerId !== editingWorkerId);
+
+    // Remove from all unit entries
+    unit1Entries = unit1Entries.filter(x => x.workerId !== editingWorkerId);
+    unit2Entries = unit2Entries.filter(x => x.workerId !== editingWorkerId);
+    unit3Entries = unit3Entries.filter(x => x.workerId !== editingWorkerId);
+    unit4Entries = unit4Entries.filter(x => x.workerId !== editingWorkerId);
+
+    // Remove from all unit attendance
+    unit1Attendance = unit1Attendance.filter(x => x.workerId !== editingWorkerId);
+    unit2Attendance = unit2Attendance.filter(x => x.workerId !== editingWorkerId);
+    unit3Attendance = unit3Attendance.filter(x => x.workerId !== editingWorkerId);
+    unit4Attendance = unit4Attendance.filter(x => x.workerId !== editingWorkerId);
+
     save();
     closeModal('modal-worker');
     renderAll();
@@ -348,195 +631,587 @@ function deleteWorker() {
 }
 
 function toggleWorkerTypeFields(type) {
-    document.getElementById('w-delete-btn').classList.add('hidden');
-    const group = document.getElementById('w-salary-group');
-    if (type === 'permanent') group.classList.remove('hidden');
-    else group.classList.add('hidden');
+  // If no type passed, read from w-category dropdown
+  if (!type) {
+    const catEl = document.getElementById('w-category');
+    type = catEl ? catEl.value : 'piece_work';
+  }
+
+  // Hide all groups first
+  const groups = ['w-salary-group', 'w-daily-group', 'w-packing-group'];
+  groups.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+
+  // Show correct group based on category
+  if (type === 'monthly_salary') {
+    const el = document.getElementById('w-salary-group');
+    if (el) el.classList.remove('hidden');
+  } else if (type === 'bundle_packing' || type === 'cover_packing') {
+    const el = document.getElementById('w-packing-group');
+    if (el) el.classList.remove('hidden');
+  } else if (type === 'piece_work' || type === 'daily_wages') {
+    const el = document.getElementById('w-daily-group');
+    if (el) el.classList.remove('hidden');
+  }
 }
 
 // ── ENTRIES ──────────────────────────────────────────────────────────────────
 function switchProductionTab(type) {
-  if (currentUser && currentUser.role === 'supervisor') {
-    if (type === 'all') {
-      const accessible = getAccessibleProductions();
-      if (accessible.length <= 1) return;
-    } else if (!hasProductionAccess(type)) {
-      showToast('Access denied to this production section');
-      return;
-    }
-  }
   currentProductionTab = type;
   document.querySelectorAll('#screen-home .report-tab').forEach(t => t.classList.remove('active'));
-  const tabIds = { all: 'prod-tab-all', daily: 'prod-tab-1', permanent: 'prod-tab-2', packing: 'prod-tab-3', other: 'prod-tab-4' };
+  const tabIds = {
+    all: 'prod-tab-all',
+    unit1: 'prod-tab-1',
+    unit2: 'prod-tab-2',
+    unit3: 'prod-tab-3',
+    unit4: 'prod-tab-4',
+    maintenance: 'prod-tab-maintenance'
+  };
   const target = document.getElementById(tabIds[type]);
   if (target) target.classList.add('active');
-  if (currentUser && currentUser.role === 'supervisor') updateActionButtons();
+  updateActionButtons();
   renderTodayEntries();
 }
 
 function renderTodayEntries() {
   const list = document.getElementById('today-entries-list');
   if (!list) return;
-  const today = todayStr();
-  const todayEntries = entries.filter(e => e.date === today);
-  const todayAtt = attendance.filter(a => a.date === today);
+  list.innerHTML = '';
 
+  const today = todayStr();
   const workerDailyMap = {};
 
-  todayAtt.forEach(a => {
-    const w = workerById(a.workerId);
-    if (!w) return;
+  const allEntries = getAllEntries();
+  const allAttendance = getAllAttendance();
+
+  // 1. Collect all active workers for the current tab
+  let activeWorkers = [];
+  if (currentProductionTab === 'maintenance') {
+    // Maintenance tab shows workers who have maintenance entries today
+    const workersWithMaintenance = new Set(
+      maintenance.filter(e => normalizeDate(e.date) === today).map(e => e.workerId)
+    );
+    activeWorkers = workers.filter(w => workersWithMaintenance.has(w.id));
+  } else if (currentProductionTab === 'all') {
+    // Show only workers who have attendance or entries today
+    const workersWithActivity = new Set([
+      ...allAttendance.filter(a => normalizeDate(a.date) === today).map(a => a.workerId),
+      ...allEntries.filter(e => normalizeDate(e.date) === today).map(e => e.workerId)
+    ]);
+    activeWorkers = workers.filter(w => workersWithActivity.has(w.id));
+  } else {
+    // Unit 1, 2, 3, 4 tabs show workers assigned to that unit
+    activeWorkers = workers.filter(w => {
+      const workerUnit = w.unit || getProdKey(w.category || w.type || 'daily');
+      return workerUnit === currentProductionTab;
+    });
+  }
+
+  // 2. Process each active worker
+  activeWorkers.forEach(w => {
+    // For maintenance tab, show maintenance entries
+    if (currentProductionTab === 'maintenance') {
+      const maintenanceEntries = maintenance.filter(e => e.workerId === w.id && normalizeDate(e.date) === today);
+
+      maintenanceEntries.forEach(entry => {
+        const card = document.createElement('div');
+        card.className = 'list-item reveal';
+        card.innerHTML = `
+          <div class="item-icon">🔧</div>
+          <div class="item-main">
+            <div class="item-title" style="font-weight:700; color:var(--text-bright);">${w.name} <span class="badge" style="background:rgba(251,146,60,0.2); color:#fb923c;">MAINTENANCE</span></div>
+            <div class="item-sub" style="font-size:11px; color:var(--text-muted);">${entry.workDescription || entry.workDesc || 'No description'}</div>
+            <div style="margin-top:4px; display:flex; gap:8px;">
+              <span class="badge-mini">Home: ${(entry.homeUnit || 'unit1').replace('unit', 'Unit ')}</span>
+            </div>
+          </div>
+          <div class="item-right">
+            <div class="item-value" style="font-size:18px; font-weight:800; color:var(--accent);">₹${entry.wageAmount || entry.wage || 0}</div>
+            <div class="item-label" style="font-size:9px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">amount</div>
+          </div>
+        `;
+        card.onclick = () => editEntry(entry.id);
+        list.appendChild(card);
+      });
+      return;
+    }
+
+    const att = allAttendance.find(a => a.workerId === w.id && normalizeDate(a.date) === today);
+    const wEntries = allEntries.filter(e => e.workerId === w.id && normalizeDate(e.date) === today);
+
+    // Filter entries based on tab
+    let filteredEntries = wEntries;
     if (currentProductionTab !== 'all') {
-      if (currentProductionTab !== 'other' && (w.type || 'daily') !== currentProductionTab) return;
+      filteredEntries = wEntries.filter(e => !e.workDesc);
     }
-    if (!workerDailyMap[a.workerId]) {
-      workerDailyMap[a.workerId] = { worker: w, piece: 0, ot: a.otAmount, adv: a.advance, status: a.status, entries: [], baseSalary: 0 };
-    } else {
-      workerDailyMap[a.workerId].ot += a.otAmount;
-      workerDailyMap[a.workerId].adv += a.advance;
-      workerDailyMap[a.workerId].status = a.status;
+
+    const pieceWage = filteredEntries.reduce((s, e) => s + (e.wage || 0), 0);
+    const otAmount = att ? (att.otAmount || 0) : 0;
+    const advance = att ? (att.advance || 0) : 0;
+    const status = att ? att.status : 'absent';
+
+    let baseSalary = 0;
+    if ((w.category === 'monthly_salary' || w.type === 'permanent') && isWorking(status)) {
+      const monthDays = getMonthDays(today);
+      baseSalary = Math.round(((w.salary || 0) / monthDays) * (isHalfDay(status) ? 0.5 : 1));
     }
-    if (w.type === 'permanent' && isWorking(a.status)) {
-      workerDailyMap[a.workerId].baseSalary = Math.round(((w.salary || 0) / 30) * (isHalfDay(a.status) ? 0.5 : 1));
+    if (w.category === 'daily_wages' && isWorking(status)) {
+      baseSalary = Math.round((w.dailyWage || 0) * (isHalfDay(status) ? 0.5 : 1));
+    }
+
+    const total = baseSalary + pieceWage + otAmount;
+
+    // Show if there is any financial activity or they are marked present
+    if (total > 0 || advance > 0 || isWorking(status) || currentProductionTab !== 'all') {
+      const card = document.createElement('div');
+      card.className = 'list-item reveal';
+      const categoryLabel = (w.category || w.type || 'piece_work').replace('_', ' ').toUpperCase();
+      card.innerHTML = `
+        <div class="item-icon">${w.emoji || '👷'}</div>
+        <div class="item-main">
+          <div class="item-title" style="font-weight:700; color:var(--text-bright);">${w.name} <span class="badge ${status}">${status.toUpperCase()}</span></div>
+          <div class="item-sub" style="font-size:11px; color:var(--text-muted);">${w.empId} · ${(w.unit || 'unit1').toUpperCase()} · ${categoryLabel}</div>
+          <div style="margin-top:4px; display:flex; gap:8px;">
+            ${baseSalary > 0 ? `<span class="badge-mini">Sal: ₹${baseSalary}</span>` : ''}
+            ${pieceWage > 0 ? `<span class="badge-mini">Work: ₹${pieceWage}</span>` : ''}
+            ${otAmount > 0 ? `<span class="badge-mini">OT: ₹${otAmount}</span>` : ''}
+          </div>
+        </div>
+        <div class="item-right">
+          <div class="item-value" style="font-size:18px; font-weight:800; color:var(--accent);">₹${total}</div>
+          ${advance > 0 ? `<div class="item-label" style="color:var(--accent); font-size:9px; text-transform:uppercase; font-weight:700;">Adv: ₹${advance}</div>` : '<div class="item-label" style="font-size:9px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">total</div>'}
+        </div>
+      `;
+      card.onclick = () => editWorkForToday(w.id);
+      list.appendChild(card);
     }
   });
 
-  todayEntries.forEach(e => {
-    const w = workerById(e.workerId);
-    if (!w) return;
-    if (currentProductionTab !== 'all') {
-      if (currentProductionTab === 'other') { if (!e.workDesc) return; }
-      else { if ((w.type || 'daily') !== currentProductionTab || !!e.workDesc) return; }
-    }
-    if (!workerDailyMap[e.workerId]) {
-      workerDailyMap[e.workerId] = { worker: w, piece: e.wage, ot: 0, adv: 0, status: 'present', entries: [e], baseSalary: 0 };
-    } else {
-      workerDailyMap[e.workerId].piece += e.wage;
-      workerDailyMap[e.workerId].entries.push(e);
-    }
-  });
+  if (list.innerHTML === '') {
+    list.innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-muted); font-size:12px;">No activity for this section today</div>';
+  }
 
+  // Update Dashboard
   let totalKg = 0, totalNetWage = 0;
-  const workerIds = Object.keys(workerDailyMap);
-  workerIds.forEach(wid => {
-    const d = workerDailyMap[wid];
-    if (d.worker.type !== 'packing' && d.worker.type !== 'other') {
-      d.entries.forEach(e => { if (!e.workDesc) totalKg += e.output; });
+  let activeCount = 0;
+
+  workers.forEach(w => {
+    const att = allAttendance.find(a => a.workerId === w.id && normalizeDate(a.date) === today);
+    const wEntries = allEntries.filter(e => e.workerId === w.id && normalizeDate(e.date) === today);
+
+    if (att || wEntries.length > 0) {
+      activeCount++;
+      const pieceWage = wEntries.reduce((s, e) => s + (e.wage || 0), 0);
+      const otAmount = att ? (att.otAmount || 0) : 0;
+      const advance = att ? (att.advance || 0) : 0;
+      const status = att ? att.status : 'absent';
+
+      let baseSalary = 0;
+      if ((w.category === 'monthly_salary' || w.type === 'permanent') && isWorking(status)) {
+        const monthDays = getMonthDays(today);
+        baseSalary = Math.round(((w.salary || 0) / monthDays) * (isHalfDay(status) ? 0.5 : 1));
+      }
+      if (w.category === 'daily_wages' && isWorking(status)) {
+        baseSalary = Math.round((w.dailyWage || 0) * (isHalfDay(status) ? 0.5 : 1));
+      }
+
+      totalNetWage += (baseSalary + pieceWage + otAmount - advance);
+
+      if ((w.category !== 'bundle_packing' && w.category !== 'cover_packing' && w.type !== 'packing') && w.type !== 'other') {
+        wEntries.forEach(e => { if (!e.workDesc) totalKg += (e.output || 0); });
+      }
     }
-    totalNetWage += (d.baseSalary + d.piece + d.ot - d.adv);
   });
 
   const dashW = document.getElementById('dash-active-workers'), dashOut = document.getElementById('dash-total-kg'), dashWage = document.getElementById('dash-total-wage');
-  if (dashW) dashW.textContent = `${workerIds.length} / ${workers.length}`;
+  if (dashW) dashW.textContent = `${activeCount} / ${workers.length}`;
   if (dashOut) dashOut.textContent = totalKg > 0 ? totalKg.toLocaleString() + ' kg' : '0';
   if (dashWage) dashWage.innerHTML = `<span style="font-size: 14px; color: var(--accent2);">₹</span>${totalNetWage.toLocaleString()}`;
-
-  if (workerIds.length === 0) {
-    list.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No activity today.</div></div>`;
-    return;
-  }
-
-  list.innerHTML = workerIds.map((wid, index) => {
-    const d = workerDailyMap[wid], w = d.worker, net = d.baseSalary + d.piece + d.ot - d.adv;
-    let activityHtml = '';
-    if (w.type === 'permanent') activityHtml += `<div class="item-sub">Fixed: ${isHalfDay(d.status) ? 'Half Day' : 'Present'}</div>`;
-    else if (d.status === 'absent') activityHtml += `<div class="item-sub" style="color:var(--danger)">Absent</div>`;
-    d.entries.forEach(e => {
-      if (e.workDesc) activityHtml += `<div class="item-sub" style="color:var(--info)">${e.workDesc} (₹${e.wage})</div>`;
-      else if (w.type === 'packing') activityHtml += `<div class="item-sub">${e.output} items @ ₹${e.rate}</div>`;
-      else activityHtml += `<div class="item-sub">${e.output}/${e.assigned} kg</div>`;
-    });
-    const statusCol = d.status === 'absent' ? 'var(--danger)' : (w.type === 'permanent' ? 'var(--accent2)' : 'var(--accent)');
-    const delay = (index % 10) * 0.05;
-    return `
-      <div class="list-item" style="display:flex; justify-content:space-between; align-items:center; animation-delay:${delay}s; padding:12px 14px; margin:0 16px 10px; background:var(--surface); border:1px solid var(--border); border-radius:12px;" onclick="editRecentEntry('${wid}')">
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div style="font-size:20px;">${w.emoji || '👷'}</div>
-          <div>
-            <div style="font-size:14px; font-weight:700; color:var(--text-bright);">${w.name}</div>
-            <div style="display:flex; gap:6px; margin-top:2px;">${activityHtml}</div>
-          </div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:16px; font-weight:800; color:${statusCol};">₹${net.toLocaleString()}</div>
-          <div style="font-size:8px; color:var(--text-muted); opacity:0.6; text-transform:uppercase; letter-spacing:0.5px;">View Details</div>
-        </div>
-      </div>`;
-  }).join('');
 }
+
 
 function editWorkForToday(wid) {
   const today = todayStr();
-  const entry = entries.find(e => e.workerId === wid && e.date === today);
+  const entry = getAllEntries().find(e => normalizeDate(e.date) === today && e.workerId === wid);
   if (entry) {
     editEntry(entry.id);
   } else {
+    const w = workerById(wid);
+    if (!w) return;
+
     openAddEntry();
-    const sel = document.getElementById('e-worker');
-    if (sel) {
-        sel.value = wid;
-        sel.dispatchEvent(new Event('change'));
+
+    // 1. Get worker unit & category
+    const workerUnit = w.unit || getProdKey(w.category || w.type || 'daily');
+    const workerCat = w.category || (w.type === 'permanent' ? 'monthly_salary' : w.type === 'packing' ? 'bundle_packing' : w.type === 'other' ? 'daily_wages' : 'piece_work');
+
+    // 2. Select Unit
+    const unitSel = document.getElementById('e-unit-type');
+    if (unitSel) {
+      unitSel.value = workerUnit;
+      unitSel.dispatchEvent(new Event('change'));
+    }
+
+    // 3. Select Category
+    const catSel = document.getElementById('e-category');
+    if (catSel) {
+      catSel.value = workerCat;
+      catSel.dispatchEvent(new Event('change'));
+    }
+
+    // 4. Select Worker
+    const workerSel = document.getElementById('e-worker');
+    if (workerSel) {
+      workerSel.value = wid;
+      workerSel.dispatchEvent(new Event('change'));
+    }
+  }
+}
+
+function populateUnitDropdown() {
+  const unitTypeSelect = document.getElementById('e-unit-type');
+  if (!unitTypeSelect) return;
+  unitTypeSelect.innerHTML = '<option value="">-- Select Unit --</option>';
+
+  if (currentUser.role === 'admin') {
+    unitTypeSelect.innerHTML += `
+      <option value="unit1">Unit 1</option>
+      <option value="unit2">Unit 2</option>
+      <option value="unit3">Unit 3</option>
+      <option value="unit4">Unit 4</option>
+      <option value="maintenance">Maintenance</option>
+    `;
+  } else if (currentUser.role === 'supervisor') {
+    const accessible = getAccessibleProductions();
+    accessible.forEach(unit => {
+      const unitNum = unit.replace('unit', '');
+      unitTypeSelect.innerHTML += `<option value="${unit}">Unit ${unitNum}</option>`;
+    });
+    if (hasMaintenancePermission()) {
+      unitTypeSelect.innerHTML += `<option value="maintenance">Maintenance</option>`;
     }
   }
 }
 
 function openAddEntry() {
-  if (currentUser.role === 'supervisor' && !hasActionPermission(currentProductionTab, 'payment')) {
-    showToast('Permission Denied: No payment access');
-    return;
+  if (currentUser.role === 'supervisor') {
+    const accessible = getAccessibleProductions();
+    if (currentProductionTab === 'all') {
+      const hasAnyAccess = accessible.some(unit => hasActionPermission(unit, 'payment') || hasActionPermission(unit, 'work'));
+      if (!hasAnyAccess) {
+        showToast('Permission Denied');
+        return;
+      }
+    } else {
+      if (!hasActionPermission(currentProductionTab, 'payment') && !hasActionPermission(currentProductionTab, 'work')) {
+        showToast('Permission Denied');
+        return;
+      }
+    }
   }
+  addEntry();
+}
+
+function addEntry() {
   document.getElementById('e-id').value = '';
   document.getElementById('e-delete-btn').classList.add('hidden');
   document.getElementById('entry-modal-title').textContent = 'Add Daily Entry';
-  let availableWorkers = workers;
-  if (currentProductionTab !== 'all' && currentProductionTab !== 'other') {
-    availableWorkers = workers.filter(w => (w.type || 'daily') === currentProductionTab);
-  }
-  if (currentUser.role === 'supervisor' && currentProductionTab !== 'other') {
-    availableWorkers = availableWorkers.filter(w => getAccessibleProductions().includes(w.type || 'daily'));
-  }
-  const sel = document.getElementById('e-worker');
-  if (!sel) return;
-  sel.innerHTML = availableWorkers.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
-  sel.onchange = function () {
-    const w = workerById(this.value);
-    toggleEntryFields(currentProductionTab === 'other' ? 'other' : (w?.type || 'daily'));
-    calcPreview();
-  };
-  
-  // Clear fields
-  ['e-assigned-morning', 'e-assigned-afternoon', 'e-output-kg', 'e-not-completed', 'e-rate', 'e-pack-pieces', 'e-work-name', 'e-payment'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.value = '';
+
+  // Clear all fields
+  ['e-assigned-morning', 'e-assigned-afternoon', 'e-output-kg', 'e-not-completed', 'e-rate', 'e-pack-pieces', 'e-pack-rate', 'e-pack-amount', 'e-work-name', 'e-payment'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
   });
-  
-  if (sel.value) sel.onchange();
+
+  // Setup unit type dropdown based on permissions
+  populateUnitDropdown();
+
+  const unitTypeSelect = document.getElementById('e-unit-type');
+  if (unitTypeSelect) {
+    unitTypeSelect.disabled = false;
+    unitTypeSelect.value = '';
+  }
+
+  // Clear category dropdown & hide category group
+  const categorySelect = document.getElementById('e-category');
+  if (categorySelect) {
+    categorySelect.innerHTML = '<option value="">-- Select Category --</option>';
+    categorySelect.disabled = true;
+  }
+  const categoryGroup = document.getElementById('e-category-group');
+  if (categoryGroup) categoryGroup.classList.add('hidden');
+
+  // Clear worker dropdown
+  const workerSelect = document.getElementById('e-worker');
+  if (workerSelect) {
+    workerSelect.innerHTML = '<option value="">-- Select Worker --</option>';
+    workerSelect.disabled = true;
+  }
+
   document.getElementById('e-date').value = todayStr();
+
+  // Hide all entry fields initially
+  ['e-kg-fields', 'e-kg-fields-2', 'e-kg-sync-row', 'e-rate-field', 'e-packing-pieces', 'e-work-desc', 'e-payment-field'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+
   document.getElementById('modal-entry').classList.add('open');
 }
 
+function onUnitTypeChange() {
+  const selectedUnit = document.getElementById('e-unit-type').value;
+  const categorySelect = document.getElementById('e-category');
+  const categoryGroup = document.getElementById('e-category-group');
+  const workerSelect = document.getElementById('e-worker');
+
+  // Reset dependents
+  if (categorySelect) {
+    categorySelect.innerHTML = '<option value="">-- Select Category --</option>';
+    categorySelect.disabled = true;
+  }
+  if (workerSelect) {
+    workerSelect.innerHTML = '<option value="">-- Select Worker --</option>';
+    workerSelect.disabled = true;
+  }
+
+  // Hide details fields initially
+  ['e-kg-fields', 'e-kg-fields-2', 'e-kg-sync-row', 'e-rate-field', 'e-packing-pieces', 'e-work-desc', 'e-payment-field'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+
+  if (!selectedUnit) {
+    if (categoryGroup) categoryGroup.classList.add('hidden');
+    return;
+  }
+
+  if (selectedUnit === 'maintenance') {
+    if (categoryGroup) categoryGroup.classList.add('hidden');
+
+    // For maintenance, show all workers from all units directly
+    const unitWorkers = workers;
+    workerSelect.innerHTML = '<option value="" selected disabled>-- Select Worker --</option>' + unitWorkers.map(w => {
+      const workerUnit = w.unit || getProdKey(w.category || w.type || 'daily');
+      const unitLabel = workerUnit.toUpperCase().replace('UNIT', 'Unit ');
+      return `<option value="${w.id}">${w.name} (${w.empId} · ${unitLabel})</option>`;
+    }).join('');
+    workerSelect.disabled = false;
+
+    // Toggle maintenance fields
+    toggleEntryFields('maintenance');
+
+    const hasPaymentPerm = currentUser.role === 'admin' || hasActionPermission('maintenance', 'payment');
+    const paymentField = document.getElementById('e-payment');
+    if (paymentField) paymentField.readOnly = !hasPaymentPerm;
+
+    calcPreview();
+  } else {
+    // Show category group
+    if (categoryGroup) categoryGroup.classList.remove('hidden');
+    if (categorySelect) {
+      categorySelect.disabled = false;
+
+      const allCats = [
+        { value: 'piece_work', label: 'Piece Work' },
+        { value: 'bundle_packing', label: 'Bundle Packing' },
+        { value: 'cover_packing', label: 'Cover Packing' },
+        { value: 'daily_wages', label: 'Daily Wages' },
+        { value: 'monthly_salary', label: 'Monthly Salary' }
+      ];
+      categorySelect.innerHTML = '<option value="">-- Select Category --</option>' +
+        allCats.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+    }
+  }
+}
+
+function onCategoryChange() {
+  const selectedUnit = document.getElementById('e-unit-type').value;
+  const selectedCategory = document.getElementById('e-category').value;
+  const workerSelect = document.getElementById('e-worker');
+
+  if (!workerSelect) return;
+
+  if (!selectedCategory) {
+    workerSelect.innerHTML = '<option value="">-- Select Worker --</option>';
+    workerSelect.disabled = true;
+
+    // Hide details fields
+    ['e-kg-fields', 'e-kg-fields-2', 'e-kg-sync-row', 'e-rate-field', 'e-packing-pieces', 'e-work-desc', 'e-payment-field'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+    return;
+  }
+
+  // Filter workers by both unit and category
+  const unitWorkers = workers.filter(w => {
+    const workerUnit = w.unit || getProdKey(w.category || w.type || 'daily');
+    const wCat = w.category || (w.type === 'permanent' ? 'monthly_salary' : w.type === 'packing' ? 'bundle_packing' : w.type === 'other' ? 'daily_wages' : 'piece_work');
+    return workerUnit === selectedUnit && wCat === selectedCategory;
+  });
+
+  if (unitWorkers.length === 0) {
+    workerSelect.innerHTML = '<option value="">No workers in this category</option>';
+    workerSelect.disabled = true;
+
+    // Hide details fields
+    ['e-kg-fields', 'e-kg-fields-2', 'e-kg-sync-row', 'e-rate-field', 'e-packing-pieces', 'e-work-desc', 'e-payment-field'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+    showToast('No workers found for this category');
+    return;
+  }
+
+  workerSelect.innerHTML = '<option value="" selected disabled>-- Select Worker --</option>' + unitWorkers.map(w => {
+    return `<option value="${w.id}">${w.name} (${w.empId})</option>`;
+  }).join('');
+  workerSelect.disabled = false;
+
+  // Toggle the details fields based on selected category
+  toggleEntryFields(selectedCategory);
+
+  // Set readonly based on payment permission for the selected unit
+  const hasPaymentPerm = currentUser.role === 'admin' || hasActionPermission(selectedUnit, 'payment');
+  const rateField = document.getElementById('e-rate');
+  const packRateField = document.getElementById('e-pack-rate');
+  const packAmountField = document.getElementById('e-pack-amount');
+  const paymentField = document.getElementById('e-payment');
+
+  if (rateField) rateField.readOnly = !hasPaymentPerm;
+  if (packRateField) packRateField.readOnly = !hasPaymentPerm;
+  if (packAmountField) packAmountField.readOnly = !hasPaymentPerm;
+  if (paymentField) paymentField.readOnly = !hasPaymentPerm;
+
+  // Auto-select first worker if only one
+  if (unitWorkers.length === 1) {
+    workerSelect.value = unitWorkers[0].id;
+    onWorkerChange();
+  } else {
+    calcPreview();
+  }
+}
+
+function onWorkerChange() {
+  const workerSelect = document.getElementById('e-worker');
+  const w = workerById(workerSelect.value);
+  if (!w) return;
+
+  const selectedCategory = document.getElementById('e-category').value || w.category || 'piece_work';
+
+  // Auto-populate defaults based on category
+  if (selectedCategory === 'bundle_packing' || selectedCategory === 'cover_packing' || selectedCategory === 'packing') {
+    const rateInput = document.getElementById('e-pack-rate');
+    const amountInput = document.getElementById('e-pack-amount');
+    if (rateInput && amountInput) {
+      rateInput.value = w.flatAmount || '';
+      amountInput.value = '';
+    }
+  } else {
+    const rateInput = document.getElementById('e-rate');
+    if (rateInput && (w.category === 'piece_work' || w.category === 'monthly_salary' || w.type === 'daily' || w.type === 'permanent')) {
+      rateInput.value = w.flatAmount || w.salary || w.dailyWage || '';
+    }
+  }
+  calcPreview();
+}
+
 function editEntry(id) {
-  const e = entries.find(x => x.id === id);
+  const allEntries = [...getAllEntries(), ...maintenance];
+  const e = allEntries.find(x => x.id === id);
   if (!e) return;
   const w = workerById(e.workerId);
   if (!w) return;
 
   document.getElementById('e-id').value = e.id;
   document.getElementById('entry-modal-title').textContent = 'Update Work Entry';
-  const sel = document.getElementById('e-worker');
-  sel.innerHTML = `<option value="${w.id}">${w.name}</option>`;
-  sel.value = w.id;
-  
-  document.getElementById('e-date').value = e.date;
-  const workerType = e.workDesc ? 'other' : (w.type || 'daily');
-  toggleEntryFields(workerType);
 
-  if (workerType === 'packing') {
+  // Setup unit type dropdown first
+  populateUnitDropdown();
+
+  // Determine if this is a maintenance entry
+  const isMaintenance = maintenance.some(m => m.id === id);
+
+  // Set unit type
+  const workerUnit = isMaintenance ? 'maintenance' : (w.unit || getProdKey(w.category || w.type || 'daily'));
+  const unitTypeSelect = document.getElementById('e-unit-type');
+  if (unitTypeSelect) {
+    unitTypeSelect.value = workerUnit;
+    unitTypeSelect.disabled = true;
+  }
+
+  // Determine entry type
+  let entryType = 'piece_work';
+  if (isMaintenance) {
+    entryType = 'maintenance';
+  } else {
+    entryType = e.homeCategory || w.category || 'piece_work';
+    if (!w.category && w.type) {
+      const typeMap = {
+        'daily': 'piece_work',
+        'permanent': 'monthly_salary',
+        'packing': 'bundle_packing',
+        'other': 'daily_wages'
+      };
+      entryType = typeMap[w.type] || 'piece_work';
+    }
+  }
+
+  const categorySelect = document.getElementById('e-category');
+  const categoryGroup = document.getElementById('e-category-group');
+
+  if (isMaintenance) {
+    if (categoryGroup) categoryGroup.classList.add('hidden');
+  } else {
+    if (categoryGroup) {
+      categoryGroup.classList.remove('hidden');
+      if (categorySelect) {
+        categorySelect.disabled = true; // Disable selection when editing
+
+        const allCats = [
+          { value: 'piece_work', label: 'Piece Work' },
+          { value: 'bundle_packing', label: 'Bundle Packing' },
+          { value: 'cover_packing', label: 'Cover Packing' },
+          { value: 'daily_wages', label: 'Daily Wages' },
+          { value: 'monthly_salary', label: 'Monthly Salary' }
+        ];
+
+        categorySelect.innerHTML = allCats.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+        categorySelect.value = entryType;
+      }
+    }
+  }
+
+  // Set worker
+  const sel = document.getElementById('e-worker');
+  const unitLabel = workerUnit.toUpperCase().replace('UNIT', 'Unit ');
+  sel.innerHTML = `<option value="${w.id}">${w.name} (${w.empId} · ${unitLabel})</option>`;
+  sel.value = w.id;
+  sel.disabled = true; // Don't allow changing worker when editing
+
+  document.getElementById('e-date').value = e.date;
+
+  toggleEntryFields(entryType);
+
+  if (entryType === 'bundle_packing' || entryType === 'cover_packing') {
     document.getElementById('e-pack-pieces').value = e.output || '';
-    document.getElementById('e-rate').value = e.rate || ''; 
-  } else if (workerType === 'other') {
-    document.getElementById('e-work-name').value = e.workDesc || '';
-    document.getElementById('e-payment').value = e.wage || '';
+    document.getElementById('e-pack-rate').value = e.rate || '';
+
+    // Check if it was a flat amount (wage doesn't match pieces * rate)
+    const pieces = e.output || 0;
+    const rate = e.rate || 0;
+    const calcWage = Math.round(pieces * rate);
+    if (e.wage && Math.round(e.wage) !== calcWage) {
+      document.getElementById('e-pack-amount').value = e.wage;
+    } else {
+      document.getElementById('e-pack-amount').value = '';
+    }
+  } else if (entryType === 'other' || entryType === 'daily_wages' || entryType === 'maintenance') {
+    document.getElementById('e-work-name').value = e.workDesc || e.workDescription || '';
+    document.getElementById('e-payment').value = e.wage || e.wageAmount || '';
   } else {
     document.getElementById('e-assigned-morning').value = e.mAssigned || '';
     document.getElementById('e-assigned-afternoon').value = e.aAssigned || '';
@@ -550,36 +1225,86 @@ function editEntry(id) {
   document.getElementById('modal-entry').classList.add('open');
 }
 
-function deleteEntry(id) {
-    if (confirm('Delete this entry?')) {
-        // Use Number() to match Date.now() strictly or use !=
-        entries = entries.filter(e => e.id != id);
-        save();
-        closeModal('modal-entry');
-        renderAll();
-        showToast('Entry deleted');
+function deleteEntry() {
+  const entryId = document.getElementById('e-id').value;
+  if (!entryId) return;
+
+  if (confirm('Delete this entry?')) {
+    // Check if it's a maintenance entry
+    const maintenanceEntry = maintenance.find(e => e.id === entryId);
+    if (maintenanceEntry) {
+      maintenance = maintenance.filter(e => e.id !== entryId);
+      save();
+      closeModal('modal-entry');
+      renderAll();
+      showToast('Maintenance entry deleted');
+      return;
     }
+
+    // Otherwise, it's a regular entry
+    const allEntries = getAllEntries();
+    const entry = allEntries.find(e => e.id === entryId);
+    if (entry) {
+      const w = workerById(entry.workerId);
+      const targetUnit = w ? (w.unit || getProdKey(w.type || 'daily')) : 'unit1';
+
+      // Remove from the correct unit array
+      if (targetUnit === 'unit1') {
+        unit1Entries = unit1Entries.filter(e => e.id !== entryId);
+      } else if (targetUnit === 'unit2') {
+        unit2Entries = unit2Entries.filter(e => e.id !== entryId);
+      } else if (targetUnit === 'unit3') {
+        unit3Entries = unit3Entries.filter(e => e.id !== entryId);
+      } else if (targetUnit === 'unit4') {
+        unit4Entries = unit4Entries.filter(e => e.id !== entryId);
+      }
+    }
+    save();
+    closeModal('modal-entry');
+    renderAll();
+    showToast('Entry deleted');
+  }
 }
 
-function toggleEntryFields(workerType) {
+function toggleEntryFields(entryType) {
   ['e-kg-fields', 'e-kg-fields-2', 'e-kg-sync-row', 'e-rate-field', 'e-packing-pieces', 'e-work-desc', 'e-payment-field'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.classList.add('hidden');
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
   });
 
-  if (workerType === 'daily' || workerType === 'permanent') {
+  if (entryType === 'piece_work') {
+    // Piece work: show KG fields and rate
     document.getElementById('e-kg-fields').classList.remove('hidden');
     document.getElementById('e-kg-fields-2').classList.remove('hidden');
     document.getElementById('e-kg-sync-row').classList.remove('hidden');
     document.getElementById('e-rate-field').classList.remove('hidden');
-  } else if (workerType === 'packing') {
-    document.getElementById('e-packing-pieces').classList.remove('hidden');
+  } else if (entryType === 'monthly_salary') {
+    // Monthly salary: show KG fields and rate (for tracking output)
+    document.getElementById('e-kg-fields').classList.remove('hidden');
+    document.getElementById('e-kg-fields-2').classList.remove('hidden');
+    document.getElementById('e-kg-sync-row').classList.remove('hidden');
     document.getElementById('e-rate-field').classList.remove('hidden');
-    const label = document.querySelector('#e-rate-field .form-label');
-    if (label) label.textContent = 'Rate per Piece';
-  } else if (workerType === 'other') {
+  } else if (entryType === 'bundle_packing' || entryType === 'cover_packing') {
+    // Packing: show pieces, rate, and flat amount fields
+    document.getElementById('e-packing-pieces').classList.remove('hidden');
+  } else if (entryType === 'daily_wages' || entryType === 'other') {
+    // Daily wages or other: show work description and payment
     document.getElementById('e-work-desc').classList.remove('hidden');
     document.getElementById('e-payment-field').classList.remove('hidden');
+  } else if (entryType === 'maintenance') {
+    // Maintenance: show work description and payment
+    document.getElementById('e-work-desc').classList.remove('hidden');
+    document.getElementById('e-payment-field').classList.remove('hidden');
+  }
+
+  // Legacy support for old 'type' field
+  if (entryType === 'daily' || entryType === 'permanent') {
+    document.getElementById('e-kg-fields').classList.remove('hidden');
+    document.getElementById('e-kg-fields-2').classList.remove('hidden');
+    document.getElementById('e-kg-sync-row').classList.remove('hidden');
+    document.getElementById('e-rate-field').classList.remove('hidden');
+  } else if (entryType === 'packing') {
+    document.getElementById('e-packing-pieces').classList.remove('hidden');
   }
 }
 
@@ -611,18 +1336,51 @@ function calcPreview() {
   const w = workerById(workerId);
   if (!w) { preview.style.display = 'none'; return; }
 
-  const workerType = currentProductionTab === 'other' ? 'other' : (w.type || 'daily');
+  // Check if maintenance type is selected
+  const selectedUnit = document.getElementById('e-unit-type').value;
+
+  // Determine entry type based on worker's category
+  let entryType = 'piece_work';
+  if (selectedUnit === 'maintenance') {
+    entryType = 'maintenance';
+  } else {
+    entryType = w.category || 'piece_work';
+    if (!w.category && w.type) {
+      // Legacy type mapping
+      const typeMap = {
+        'daily': 'piece_work',
+        'permanent': 'monthly_salary',
+        'packing': 'bundle_packing',
+        'other': 'daily_wages'
+      };
+      entryType = typeMap[w.type] || 'piece_work';
+    }
+  }
+
   let wage = 0, text = '';
 
-  if (workerType === 'packing') {
+  if (entryType === 'bundle_packing' || entryType === 'cover_packing') {
     const pieces = parseFloat(document.getElementById('e-pack-pieces').value) || 0;
-    const rate = parseFloat(document.getElementById('e-rate').value) || 0;
-    wage = pieces * rate;
-    text = `${pieces} items × ₹${rate}`;
-  } else if (workerType === 'other') {
+    let rate = parseFloat(document.getElementById('e-pack-rate').value) || 0;
+    let flatAmount = parseFloat(document.getElementById('e-pack-amount').value) || 0;
+
+    // Use worker profile default if UI fields are empty
+    if (rate <= 0 && flatAmount <= 0 && w.flatAmount > 0) {
+      rate = w.flatAmount;
+    }
+
+    if (flatAmount > 0) {
+      wage = flatAmount;
+      text = `Flat Amount: ₹${flatAmount}`;
+    } else {
+      wage = pieces * rate;
+      text = `${pieces} items × ₹${rate}`;
+    }
+  } else if (entryType === 'other' || entryType === 'daily_wages' || entryType === 'maintenance') {
     wage = parseFloat(document.getElementById('e-payment').value) || 0;
-    text = 'Custom Payment';
+    text = entryType === 'maintenance' ? 'Maintenance Payment' : 'Custom Payment';
   } else {
+    // piece_work or monthly_salary
     const m = parseFloat(document.getElementById('e-assigned-morning').value) || 0;
     const a = parseFloat(document.getElementById('e-assigned-afternoon').value) || 0;
     const bal = parseFloat(document.getElementById('e-not-completed').value) || 0;
@@ -644,44 +1402,146 @@ function calcPreview() {
 function saveEntry() {
   const entryId = document.getElementById('e-id').value;
   const workerId = document.getElementById('e-worker').value;
-  const date = document.getElementById('e-date').value;
+  const dateFromUI = document.getElementById('e-date').value;
+  const selectedUnit = document.getElementById('e-unit-type').value;
+
+  if (!selectedUnit) {
+    showToast('Please select a unit type');
+    return;
+  }
+
+  if (!workerId) {
+    showToast('Please select a worker');
+    return;
+  }
+
   const w = workerById(workerId);
   if (!w) return;
-  const type = currentProductionTab === 'other' ? 'other' : (w.type || 'daily');
-  if (!hasActionPermission(type, 'payment')) { showToast('Permission Denied'); return; }
+
+  // Use the selected unit from dropdown
+  const targetUnit = selectedUnit;
+
+  // Check permissions
+  if (targetUnit === 'maintenance') {
+    // Check maintenance permission
+    if (currentUser.role === 'supervisor' && !hasMaintenancePermission()) {
+      showToast('Permission Denied: Maintenance access required');
+      return;
+    }
+  } else {
+    // Check unit permissions
+    if (!hasActionPermission(targetUnit, 'payment') && !hasActionPermission(targetUnit, 'work')) {
+      showToast('Permission Denied');
+      return;
+    }
+  }
+
+  // Determine entry type based on selected unit or category dropdown
+  let entryType = 'piece_work';
+  if (targetUnit === 'maintenance') {
+    entryType = 'maintenance';
+  } else {
+    entryType = document.getElementById('e-category').value || w.category || 'piece_work';
+    if (!document.getElementById('e-category').value && !w.category && w.type) {
+      // Legacy type mapping
+      const typeMap = {
+        'daily': 'piece_work',
+        'permanent': 'monthly_salary',
+        'packing': 'bundle_packing',
+        'other': 'daily_wages'
+      };
+      entryType = typeMap[w.type] || 'piece_work';
+    }
+  }
 
   let wage, assigned, output, rate, mAssigned, aAssigned, notCompleted, workDesc = '';
 
-  if (type === 'packing') {
+  if (entryType === 'bundle_packing' || entryType === 'cover_packing') {
     const pieces = parseFloat(document.getElementById('e-pack-pieces').value) || 0;
-    const packRate = parseFloat(document.getElementById('e-rate').value) || 0;
-    wage = Math.round(pieces * packRate);
+    let packRate = parseFloat(document.getElementById('e-pack-rate').value) || 0;
+    let flatAmount = parseFloat(document.getElementById('e-pack-amount').value) || 0;
+
+    // Default to worker's flatAmount if no entry rate/amount provided
+    if (packRate <= 0 && flatAmount <= 0 && w.flatAmount > 0) {
+      packRate = w.flatAmount;
+    }
+
+    wage = flatAmount > 0 ? Math.round(flatAmount) : Math.round(pieces * packRate);
     assigned = output = mAssigned = pieces;
     aAssigned = notCompleted = 0;
     rate = packRate;
-  } else if (type === 'other') {
+  } else if (entryType === 'other' || entryType === 'daily_wages' || entryType === 'maintenance') {
     workDesc = document.getElementById('e-work-name').value.trim();
     wage = parseFloat(document.getElementById('e-payment').value) || 0;
     assigned = output = rate = mAssigned = aAssigned = notCompleted = 0;
   } else {
+    // piece_work or monthly_salary
     mAssigned = parseFloat(document.getElementById('e-assigned-morning').value) || 0;
     aAssigned = parseFloat(document.getElementById('e-assigned-afternoon').value) || 0;
     assigned = mAssigned + aAssigned;
     notCompleted = parseFloat(document.getElementById('e-not-completed').value) || 0;
-    output = assigned - notCompleted;
+    output = Math.max(0, assigned - notCompleted);
     rate = parseFloat(document.getElementById('e-rate').value) || 0;
     wage = Math.round(output * rate);
   }
 
-  if (entryId) {
-    const idx = entries.findIndex(x => x.id === entryId);
-    if (idx !== -1) entries[idx] = { ...entries[idx], workerId, date, assigned, output, rate, wage, mAssigned, aAssigned, notCompleted, workDesc };
-  } else {
-    entries.push({ id: uid(), workerId, date, assigned, output, rate, wage, mAssigned, aAssigned, notCompleted, workDesc });
+  const allEntries = getAllEntries();
+  const existingEntry = allEntries.find(x => x.id === entryId);
+
+  // For maintenance entries, use the exact database column names
+  const entryData = {
+    id: entryId || uid(),
+    workerId,
+    workerName: w.name,
+    homeUnit: w.unit || getProdKey(w.category || w.type || 'daily'),
+    homeCategory: w.category || (w.type === 'permanent' ? 'monthly_salary' : w.type === 'packing' ? 'bundle_packing' : w.type === 'other' ? 'daily_wages' : 'piece_work'),
+    category: targetUnit === 'maintenance' ? 'maintenance' : (document.getElementById('e-category').value || w.category || w.type || 'piece_work'),
+    date: entryId ? normalizeDate(existingEntry?.date || dateFromUI || todayStr()) : normalizeDate(dateFromUI || todayStr()),
+    assigned,
+    assignedTotal: assigned,
+    output,
+    rate,
+    wage,
+    wageAmount: wage, // Alias for maintenance compatibility
+    mAssigned,
+    assignedMorning: mAssigned,
+    aAssigned,
+    assignedAfternoon: aAssigned,
+    notCompleted,
+    workDescription: workDesc, // For maintenance
+    workDesc, // Keep for backward compatibility
+    otHours: 0,
+    otAmount: 0,
+    advance: 0
+  };
+
+  // Update the correct unit array based on selected unit
+  if (targetUnit === 'maintenance') {
+    const existingIdx = maintenance.findIndex(e => e.id === entryData.id);
+    if (existingIdx >= 0) maintenance[existingIdx] = entryData;
+    else maintenance.push(entryData);
+  } else if (targetUnit === 'unit1') {
+    const existingIdx = unit1Entries.findIndex(e => e.id === entryData.id);
+    if (existingIdx >= 0) unit1Entries[existingIdx] = entryData;
+    else unit1Entries.push(entryData);
+  } else if (targetUnit === 'unit2') {
+    const existingIdx = unit2Entries.findIndex(e => e.id === entryData.id);
+    if (existingIdx >= 0) unit2Entries[existingIdx] = entryData;
+    else unit2Entries.push(entryData);
+  } else if (targetUnit === 'unit3') {
+    const existingIdx = unit3Entries.findIndex(e => e.id === entryData.id);
+    if (existingIdx >= 0) unit3Entries[existingIdx] = entryData;
+    else unit3Entries.push(entryData);
+  } else if (targetUnit === 'unit4') {
+    const existingIdx = unit4Entries.findIndex(e => e.id === entryData.id);
+    if (existingIdx >= 0) unit4Entries[existingIdx] = entryData;
+    else unit4Entries.push(entryData);
   }
+
   save();
   closeModal('modal-entry');
   renderAll();
+  showToast('Entry saved successfully ✓');
 }
 
 // ── SYNC ─────────────────────────────────────────────────────────────────────
@@ -692,7 +1552,17 @@ async function syncData() {
     btn.innerHTML = `<span class="rotating" style="display:inline-block;">↻</span>`;
   }
   try {
-    const backup = { timestamp: new Date().toISOString(), version: '2.2', data: { workers, entries, attendance, users } };
+    const backup = {
+      timestamp: new Date().toISOString(),
+      version: '2.2',
+      data: {
+        workers,
+        unit1Entries, unit2Entries, unit3Entries, unit4Entries,
+        unit1Attendance, unit2Attendance, unit3Attendance, unit4Attendance,
+        maintenance,
+        users
+      }
+    };
     const success = await sendCloudEmail({
       subject: "WageTrack Full Data Backup: " + new Date().toLocaleString(),
       body: "Complete system backup.",
@@ -711,76 +1581,216 @@ function renderUsers() {
   const list = document.getElementById('users-list');
   if (!list) return;
   const sups = users.filter(u => u.role === 'supervisor');
-  list.innerHTML = sups.map(u => `
+  if (sups.length === 0) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No supervisors created.<br>Admins can add supervisors here.</div></div>`;
+    return;
+  }
+  list.innerHTML = sups.map(u => {
+    const accessSummary = [];
+    if (u.access) {
+      const unitNames = { unit1: 'Unit 1', unit2: 'Unit 2', unit3: 'Unit 3', unit4: 'Unit 4' };
+      Object.keys(u.access).forEach(unit => {
+        if (unit === 'maintenance') {
+          if (u.access[unit].length > 0) {
+            accessSummary.push('🔧 Maintenance');
+          }
+        } else if (u.access[unit].length > 0) {
+          const hasAll = u.access[unit].includes('attendance') && u.access[unit].includes('work') && u.access[unit].includes('payment');
+          if (hasAll) {
+            accessSummary.push(`${unitNames[unit]}(Full)`);
+          } else {
+            const perms = u.access[unit].map(p => p === 'attendance' ? 'Att' : p === 'work' ? 'Work' : 'Pay').join('+');
+            accessSummary.push(`${unitNames[unit]}(${perms})`);
+          }
+        }
+      });
+    }
+    const accessText = accessSummary.length > 0 ? accessSummary.join(' · ') : 'No access';
+
+    // Check if user has full access to all units (admin-level)
+    const hasFullAccessToAll = u.access &&
+      ['unit1', 'unit2', 'unit3', 'unit4'].every(unit =>
+        u.access[unit] &&
+        u.access[unit].includes('attendance') &&
+        u.access[unit].includes('work') &&
+        u.access[unit].includes('payment')
+      );
+
+    const roleDisplay = hasFullAccessToAll ? 'Supervisor (Admin-level)' : 'Supervisor';
+
+    return `
     <div class="list-item">
-      <div class="item-icon">👤</div>
+      <div class="item-icon">${hasFullAccessToAll ? '👑' : '👤'}</div>
       <div class="item-main">
         <div class="item-title">${u.username}</div>
-        <div class="item-sub">${u.gmail || 'No email'} · Supervisor</div>
+        <div class="item-sub">${u.gmail || 'No email'} · ${roleDisplay}</div>
+        <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Access: ${accessText}</div>
       </div>
       <button class="pill-btn secondary" onclick="editUser('${u.username}')">Edit</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function openAddUser() {
-    document.getElementById('u-username').value = '';
-    document.getElementById('u-gmail').value = '';
-    document.getElementById('u-password').value = '';
-    const perms = document.getElementById('u-perms-list');
-    perms.innerHTML = ['daily', 'permanent', 'packing', 'other'].map(p => `
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-            <input type="checkbox" class="u-perm-cb" value="${p}" id="perm-${p}">
-            <label for="perm-${p}" style="font-size:12px; font-weight:700;">Prod ${p === 'daily' ? '1' : p === 'permanent' ? '2' : p === 'packing' ? '3' : '4'}</label>
+  document.getElementById('u-username').value = '';
+  document.getElementById('u-gmail').value = '';
+  document.getElementById('u-password').value = '';
+  const perms = document.getElementById('u-perms-list');
+  perms.innerHTML = ['unit1', 'unit2', 'unit3', 'unit4'].map((unit, i) => {
+    const label = `Unit ${i + 1}`;
+    return `
+            <div style="margin-bottom:12px; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--border);">
+                <div style="font-size:12px; font-weight:800; color:var(--accent); margin-bottom:6px;">${label}</div>
+                <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                        <input type="checkbox" class="u-perm-cb u-perm-full" data-prod="${unit}" data-action="full" onchange="toggleFullAccess('${unit}', this.checked)"> <strong>Full Access</strong>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                        <input type="checkbox" class="u-perm-cb u-perm-individual" data-prod="${unit}" data-action="attendance"> Attendance
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                        <input type="checkbox" class="u-perm-cb u-perm-individual" data-prod="${unit}" data-action="work"> Work
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                        <input type="checkbox" class="u-perm-cb u-perm-individual" data-prod="${unit}" data-action="payment"> Payment
+                    </label>
+                </div>
+            </div>
+        `;
+  }).join('') + `
+        <div style="margin-bottom:12px; padding:8px; background:rgba(251,146,60,0.1); border-radius:8px; border:1px solid rgba(251,146,60,0.3);">
+            <div style="font-size:12px; font-weight:800; color:#fb923c; margin-bottom:6px;">🔧 Maintenance Access</div>
+            <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                    <input type="checkbox" class="u-perm-cb u-perm-maintenance" data-prod="maintenance" data-action="maintenance"> Allow Maintenance Operations
+                </label>
+            </div>
         </div>
-    `).join('');
-    document.getElementById('modal-user').classList.add('open');
+    `;
+  document.getElementById('modal-user').classList.add('open');
 }
 
 function editUser(username) {
-    const u = users.find(x => x.username === username);
-    if (!u) return;
-    document.getElementById('u-username').value = u.username;
-    document.getElementById('u-gmail').value = u.gmail || '';
-    document.getElementById('u-password').value = u.password || '';
-    const perms = document.getElementById('u-perms-list');
-    perms.innerHTML = ['daily', 'permanent', 'packing', 'other'].map(p => {
-        const checked = u.access && u.access['prod' + (['daily', 'permanent', 'packing', 'other'].indexOf(p) + 1)];
-        return `
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                <input type="checkbox" class="u-perm-cb" value="${p}" id="perm-${p}" ${checked ? 'checked' : ''}>
-                <label for="perm-${p}" style="font-size:12px; font-weight:700;">Prod ${p === 'daily' ? '1' : p === 'permanent' ? '2' : p === 'packing' ? '3' : '4'}</label>
+  const u = users.find(x => x.username === username);
+  if (!u) return;
+  document.getElementById('u-username').value = u.username;
+  document.getElementById('u-gmail').value = u.gmail || '';
+  document.getElementById('u-password').value = u.password || '';
+  const perms = document.getElementById('u-perms-list');
+  perms.innerHTML = ['unit1', 'unit2', 'unit3', 'unit4'].map((unit, i) => {
+    const label = `Unit ${i + 1}`;
+    const hasAtt = u.access && u.access[unit] && u.access[unit].includes('attendance');
+    const hasWork = u.access && u.access[unit] && u.access[unit].includes('work');
+    const hasPay = u.access && u.access[unit] && u.access[unit].includes('payment');
+    const hasFull = hasAtt && hasWork && hasPay;
+    return `
+            <div style="margin-bottom:12px; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--border);">
+                <div style="font-size:12px; font-weight:800; color:var(--accent); margin-bottom:6px;">${label}</div>
+                <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                        <input type="checkbox" class="u-perm-cb u-perm-full" data-prod="${unit}" data-action="full" ${hasFull ? 'checked' : ''} onchange="toggleFullAccess('${unit}', this.checked)"> <strong>Full Access</strong>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                        <input type="checkbox" class="u-perm-cb u-perm-individual" data-prod="${unit}" data-action="attendance" ${hasAtt ? 'checked' : ''}> Attendance
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                        <input type="checkbox" class="u-perm-cb u-perm-individual" data-prod="${unit}" data-action="work" ${hasWork ? 'checked' : ''}> Work
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                        <input type="checkbox" class="u-perm-cb u-perm-individual" data-prod="${unit}" data-action="payment" ${hasPay ? 'checked' : ''}> Payment
+                    </label>
+                </div>
             </div>
         `;
-    }).join('');
-    document.getElementById('modal-user').classList.add('open');
+  }).join('') + `
+        <div style="margin-bottom:12px; padding:8px; background:rgba(251,146,60,0.1); border-radius:8px; border:1px solid rgba(251,146,60,0.3);">
+            <div style="font-size:12px; font-weight:800; color:#fb923c; margin-bottom:6px;">🔧 Maintenance Access</div>
+            <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:11px;">
+                    <input type="checkbox" class="u-perm-cb u-perm-maintenance" data-prod="maintenance" data-action="maintenance" ${u.access && u.access.maintenance && u.access.maintenance.includes('maintenance') ? 'checked' : ''}> Allow Maintenance Operations
+                </label>
+            </div>
+        </div>
+    `;
+  document.getElementById('modal-user').classList.add('open');
+}
+
+function toggleFullAccess(unit, isChecked) {
+  // Get all individual permission checkboxes for this unit
+  const individualCheckboxes = document.querySelectorAll(`.u-perm-individual[data-prod="${unit}"]`);
+
+  if (isChecked) {
+    // Check all individual permissions
+    individualCheckboxes.forEach(cb => {
+      cb.checked = true;
+      cb.disabled = true;
+    });
+  } else {
+    // Enable individual permissions for manual selection
+    individualCheckboxes.forEach(cb => {
+      cb.disabled = false;
+    });
+  }
 }
 
 function saveUser() {
-    const username = document.getElementById('u-username').value.trim();
-    const gmail = document.getElementById('u-gmail').value.trim();
-    const password = document.getElementById('u-password').value.trim();
-    if (!username || !password) { showToast('Username and Password required'); return; }
-    
-    const access = {};
-    document.querySelectorAll('.u-perm-cb:checked').forEach(cb => {
-        const prodId = 'prod' + (['daily', 'permanent', 'packing', 'other'].indexOf(cb.value) + 1);
-        access[prodId] = ['attendance', 'payment'];
-    });
+  const username = document.getElementById('u-username').value.trim();
+  const gmail = document.getElementById('u-gmail').value.trim();
+  const password = document.getElementById('u-password').value.trim();
+  if (!username || !password) { showToast('Username and Password required'); return; }
 
-    const idx = users.findIndex(u => u.username === username);
-    if (idx !== -1) {
-        users[idx] = { ...users[idx], gmail, password, access };
+  const access = {};
+
+  // Process each unit
+  ['unit1', 'unit2', 'unit3', 'unit4'].forEach(unit => {
+    const fullAccessCb = document.querySelector(`.u-perm-full[data-prod="${unit}"]`);
+    const isFullAccess = fullAccessCb && fullAccessCb.checked;
+
+    if (isFullAccess) {
+      // Grant all permissions for this unit
+      access[unit] = ['attendance', 'work', 'payment'];
     } else {
-        users.push({ username, gmail, password, role: 'supervisor', access });
+      // Collect only checked individual permissions
+      const checkedPerms = [];
+      document.querySelectorAll(`.u-perm-individual[data-prod="${unit}"]:checked`).forEach(cb => {
+        checkedPerms.push(cb.dataset.action);
+      });
+      if (checkedPerms.length > 0) {
+        access[unit] = checkedPerms;
+      }
     }
-    save();
-    closeModal('modal-user');
-    renderUsers();
-    showToast('User saved ✓');
+  });
+
+  // Process maintenance permission
+  const maintenanceCb = document.querySelector('.u-perm-maintenance[data-prod="maintenance"]');
+  if (maintenanceCb && maintenanceCb.checked) {
+    access.maintenance = ['maintenance'];
+  }
+
+  const idx = users.findIndex(u => u.username === username);
+  if (idx !== -1) {
+    users[idx] = { ...users[idx], gmail, password, access };
+    showToast('User updated ✓');
+  } else {
+    if (users.find(u => u.username === username)) { showToast('Username already exists'); return; }
+    users.push({ username, gmail, password, role: 'supervisor', access });
+    showToast('User added ✓');
+  }
+  save();
+  closeModal('modal-user');
+  renderUsers();
 }
 
 // ── STARTUP ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   checkAuth();
-  if (currentUser) renderAll();
+  if (currentUser) {
+    // Self-healing: if local storage cache was cleared but session persists, auto-fetch from cloud
+    if (!workers || workers.length === 0) {
+      console.log('Local workers cache is empty. Performing automatic cloud fetch recovery...');
+      fetchAll();
+    } else {
+      renderAll();
+    }
+  }
 });
