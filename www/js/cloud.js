@@ -105,7 +105,7 @@ async function cloudSync(action = 'sync_all') {
           // Always ensure at least the default admin exists to prevent lockout.
           // Note: Only overwrite the users array if it was returned and is non-empty,
           // OR if the current user is an admin.
-          if (d.users !== undefined && d.users !== null && (d.users.length > 0 || currentUser.role === 'admin')) {
+          if (d.users !== undefined && d.users !== null && (d.users.length > 0 || (currentUser && currentUser.role === 'admin'))) {
             window.users = d.users.map(u => {
               if (typeof u.access === 'string') {
                 try { u.access = JSON.parse(u.access); } catch(e) { u.access = {}; }
@@ -501,31 +501,47 @@ function fetchAllData(ss) {
 function saveToSheet(ss, sheetName, dataArray) {
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) sheet = ss.insertSheet(sheetName);
+
+  const numericFields = [
+    'salary', 'otRate', 'flatAmount', 'dailyWage', 'paidLeaves',
+    'wage', 'rate', 'pieces', 'packRate',
+    'assigned', 'assignedTotal', 'assignedMorning', 'assignedAfternoon',
+    'output', 'notCompleted', 'otHours', 'otAmount', 'advance',
+    'wageAmount'
+  ];
+
   let headers = [];
   if (sheet.getLastColumn() > 0) {
-    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  } else if (dataArray && dataArray.length > 0) {
-    headers = Object.keys(dataArray[0]);
-    sheet.appendRow(headers);
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].filter(function(h) { return h !== ''; });
+  }
+
+  // Expand headers with any new fields present in the incoming data
+  if (dataArray && dataArray.length > 0) {
+    dataArray.forEach(function(obj) {
+      Object.keys(obj).forEach(function(k) {
+        if (headers.indexOf(k) === -1) headers.push(k);
+      });
+    });
+    if (sheet.getLastColumn() === 0) {
+      sheet.appendRow(headers);
+    } else {
+      // Rewrite the header row to include any newly added columns
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
   }
 
   if (sheet.getLastRow() > 1 && headers.length > 0) {
-    sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    var lastDataRow = sheet.getLastRow() - 1;
+    var lastDataCol = Math.max(headers.length, sheet.getLastColumn());
+    sheet.getRange(2, 1, lastDataRow, lastDataCol).clearContent();
   }
 
   if (!dataArray || dataArray.length === 0) return;
 
-  const rows = dataArray.map(obj => {
-    return headers.map(h => {
+  const rows = dataArray.map(function(obj) {
+    return headers.map(function(h) {
       let val = obj[h];
-      const numericFields = [
-        'salary', 'otRate', 'flatAmount', 'dailyWage', 'paidLeaves',
-        'wage', 'rate', 'pieces', 'packRate',
-        'assignedTotal', 'assignedMorning', 'assignedAfternoon',
-        'output', 'notCompleted', 'otHours', 'otAmount', 'advance',
-        'wageAmount'
-      ];
-      if (numericFields.includes(h) && (val === undefined || val === null)) return 0;
+      if (numericFields.indexOf(h) !== -1 && (val === undefined || val === null || val === '')) return 0;
       if (val && typeof val === 'object') return JSON.stringify(val);
       return (val !== undefined && val !== null) ? val : '';
     });
@@ -542,11 +558,18 @@ function getSheetData(ss, sheetName) {
   const data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
   const headers = data[0];
+  const numericFields = [
+    'salary', 'otRate', 'flatAmount', 'dailyWage', 'paidLeaves',
+    'wage', 'rate', 'pieces', 'packRate',
+    'assigned', 'assignedTotal', 'assignedMorning', 'assignedAfternoon',
+    'output', 'notCompleted', 'otHours', 'otAmount', 'advance',
+    'wageAmount'
+  ];
   return data.slice(1)
-    .filter(row => row.some(cell => cell !== '' && cell !== null))
-    .map(row => {
+    .filter(function(row) { return row.some(function(cell) { return cell !== '' && cell !== null; }); })
+    .map(function(row) {
       const obj = {};
-      headers.forEach((h, i) => {
+      headers.forEach(function(h, i) {
         let val = row[i];
         if (val instanceof Date || (val && typeof val.getMonth === 'function')) {
           val = Utilities.formatDate(val, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
@@ -556,6 +579,10 @@ function getSheetData(ss, sheetName) {
             val = JSON.parse(val);
           }
         } catch (e) {}
+        // Convert empty-string numeric fields to 0 so calculations don't get NaN
+        if (numericFields.indexOf(h) !== -1 && (val === '' || val === null || val === undefined)) {
+          val = 0;
+        }
         obj[h] = val;
       });
       return obj;

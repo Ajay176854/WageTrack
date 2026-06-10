@@ -208,7 +208,7 @@ function finishLogin(userObj) {
   document.body.classList.add('logged-in');
 
   if (window.checkAuth) checkAuth();
-  renderAll();
+  try { renderAll(); } catch (e) { console.error('renderAll error:', e); }
   switchScreen('home', document.querySelector('.nav-btn'));
   showToast(`Welcome back, ${userObj.username}!`);
 }
@@ -608,25 +608,296 @@ function deleteWorker() {
   const w = workerById(editingWorkerId);
   if (!w) return;
 
-  if (confirm(`Are you sure you want to delete ${w.name}? All their attendance and work entries will be lost forever.`)) {
-    workers = workers.filter(x => x.id !== editingWorkerId);
+  const workerEntries    = getAllEntries().filter(e => e.workerId === w.id);
+  const workerAttendance = getAllAttendance().filter(a => a.workerId === w.id);
+  const workerMaintenance = maintenance.filter(m => m.workerId === w.id);
+  const totalRecords = workerEntries.length + workerAttendance.length + workerMaintenance.length;
 
-    // Remove from all unit entries
-    unit1Entries = unit1Entries.filter(x => x.workerId !== editingWorkerId);
-    unit2Entries = unit2Entries.filter(x => x.workerId !== editingWorkerId);
-    unit3Entries = unit3Entries.filter(x => x.workerId !== editingWorkerId);
-    unit4Entries = unit4Entries.filter(x => x.workerId !== editingWorkerId);
+  // Step 1: warn — CSV downloads now, PDF will follow separately
+  const proceed = confirm(
+    `⚠ DELETE WORKER: ${w.name} (${w.empId || w.id})\n\n` +
+    `This will permanently remove:\n` +
+    `  • ${workerEntries.length} work entries\n` +
+    `  • ${workerAttendance.length} attendance records\n` +
+    `  • ${workerMaintenance.length} maintenance records\n\n` +
+    `CSV + PDF backups will be saved to your downloads.\n` +
+    `Click OK to continue.`
+  );
+  if (!proceed) return;
 
-    // Remove from all unit attendance
-    unit1Attendance = unit1Attendance.filter(x => x.workerId !== editingWorkerId);
-    unit2Attendance = unit2Attendance.filter(x => x.workerId !== editingWorkerId);
-    unit3Attendance = unit3Attendance.filter(x => x.workerId !== editingWorkerId);
-    unit4Attendance = unit4Attendance.filter(x => x.workerId !== editingWorkerId);
+  // CSV downloads immediately (synchronous, in this user-gesture context)
+  downloadWorkerBackup(w, workerEntries, workerAttendance, workerMaintenance);
 
-    save();
-    closeModal('modal-worker');
-    renderAll();
-    showToast(`Worker ${w.name} deleted.`);
+  // Step 2: final confirm
+  const confirmDelete = confirm(
+    `CSV backup downloaded for ${w.name}.\n\n` +
+    `FINAL CONFIRMATION — permanently delete this worker and all ${totalRecords} records?\n\n` +
+    `This cannot be undone.`
+  );
+  if (!confirmDelete) return;
+
+  workers = workers.filter(x => x.id !== editingWorkerId);
+  unit1Entries    = unit1Entries.filter(x => x.workerId !== editingWorkerId);
+  unit2Entries    = unit2Entries.filter(x => x.workerId !== editingWorkerId);
+  unit3Entries    = unit3Entries.filter(x => x.workerId !== editingWorkerId);
+  unit4Entries    = unit4Entries.filter(x => x.workerId !== editingWorkerId);
+  unit1Attendance = unit1Attendance.filter(x => x.workerId !== editingWorkerId);
+  unit2Attendance = unit2Attendance.filter(x => x.workerId !== editingWorkerId);
+  unit3Attendance = unit3Attendance.filter(x => x.workerId !== editingWorkerId);
+  unit4Attendance = unit4Attendance.filter(x => x.workerId !== editingWorkerId);
+  maintenance     = maintenance.filter(x => x.workerId !== editingWorkerId);
+
+  save();
+  closeModal('modal-worker');
+  renderAll();
+  showToast(`${w.name} deleted. PDF backup downloading...`);
+
+  // PDF downloads in a new task — browser allows only one programmatic download
+  // per synchronous execution, so we defer this with setTimeout
+  setTimeout(() => downloadWorkerBackupPDF(w, workerEntries, workerAttendance, workerMaintenance), 300);
+}
+
+function downloadWorkerBackup(w, entries, attendance, maintenanceRecs) {
+  const lines = [];
+
+  // Worker profile
+  lines.push('=== WORKER PROFILE ===');
+  lines.push('id,empId,phone,name,unit,category,salary,paidLeaves,dailyWage,flatAmount,otRate');
+  lines.push([
+    w.id, w.empId || '', w.phone || '',
+    '"' + (w.name || '').replace(/"/g, '""') + '"',
+    w.unit || '', w.category || '',
+    w.salary || 0, w.paidLeaves || 0, w.dailyWage || 0, w.flatAmount || 0, w.otRate || 0
+  ].join(','));
+
+  // Work entries
+  lines.push('');
+  lines.push('=== WORK ENTRIES (' + entries.length + ' records) ===');
+  lines.push('id,date,category,assignedMorning,assignedAfternoon,assignedTotal,output,notCompleted,rate,pieces,packRate,wage');
+  entries.forEach(e => {
+    lines.push([
+      e.id, e.date, e.category || '',
+      e.assignedMorning || 0, e.assignedAfternoon || 0, e.assignedTotal || 0,
+      e.output || 0, e.notCompleted || 0, e.rate || 0, e.pieces || 0, e.packRate || 0, e.wage || 0
+    ].join(','));
+  });
+
+  // Attendance
+  lines.push('');
+  lines.push('=== ATTENDANCE (' + attendance.length + ' records) ===');
+  lines.push('id,date,status,otHours,otAmount,advance');
+  attendance.forEach(a => {
+    lines.push([a.id || '', a.date, a.status || '', a.otHours || 0, a.otAmount || 0, a.advance || 0].join(','));
+  });
+
+  // Maintenance
+  if (maintenanceRecs.length > 0) {
+    lines.push('');
+    lines.push('=== MAINTENANCE RECORDS (' + maintenanceRecs.length + ' records) ===');
+    lines.push('id,date,homeUnit,homeCategory,workDescription,wageAmount,otHours,otAmount,advance');
+    maintenanceRecs.forEach(m => {
+      lines.push([
+        m.id || '', m.date, m.homeUnit || '', m.homeCategory || '',
+        '"' + (m.workDescription || '').replace(/"/g, '""') + '"',
+        m.wageAmount || 0, m.otHours || 0, m.otAmount || 0, m.advance || 0
+      ].join(','));
+    });
+  }
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'backup_' + (w.name || w.id).replace(/\s+/g, '_') + '_' + (w.empId || w.id) + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadWorkerBackupPDF(w, entries, attendance, maintenanceRecs) {
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    showToast('PDF library not ready — CSV backup was saved');
+    return;
+  }
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p', 'mm', 'a4');
+
+    const catLabels = {
+      piece_work: 'Piece Work', monthly_salary: 'Monthly Salary',
+      bundle_packing: 'Bundle Packing', cover_packing: 'Cover Packing', daily_wages: 'Daily Wages'
+    };
+    const unitLabels = { unit1: 'Unit 1', unit2: 'Unit 2', unit3: 'Unit 3', unit4: 'Unit 4' };
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    doc.setFillColor(241, 243, 244);
+    doc.rect(0, 0, 210, 45, 'F');
+    doc.setTextColor(184, 134, 11);
+    doc.setFontSize(20); doc.setFont('helvetica', 'bold');
+    doc.text('WageTrack — Worker Backup', 15, 20);
+    doc.setTextColor(60, 64, 67);
+    doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+    doc.text(
+      (w.name || '') + '  |  ' + (w.empId || w.id) + '  |  ' +
+      (unitLabels[w.unit] || w.unit || '') + '  |  ' + (catLabels[w.category] || w.category || ''),
+      15, 29
+    );
+    doc.text('Backup Generated: ' + new Date().toLocaleString(), 15, 36);
+
+    let yPos = 50;
+
+    // ── Worker Profile ───────────────────────────────────────────────────────
+    doc.setFillColor(255, 255, 255); doc.setDrawColor(218, 220, 224);
+    doc.rect(15, yPos, 180, 20, 'FD');
+    const profileCols = [
+      ['SALARY',      w.salary     ? 'Rs.' + w.salary.toLocaleString()    : '—', 20],
+      ['DAILY WAGE',  w.dailyWage  ? 'Rs.' + w.dailyWage + '/day'         : '—', 57],
+      ['OT RATE',     w.otRate     ? 'Rs.' + w.otRate + '/hr'             : '—', 97],
+      ['PAID LEAVES', w.paidLeaves ? w.paidLeaves + ' days'               : '—', 133],
+      ['PHONE',       w.phone      || '—',                                       168]
+    ];
+    profileCols.forEach(([label, val, x]) => {
+      doc.setTextColor(184, 134, 11); doc.setFontSize(7); doc.setFont('helvetica', 'normal');
+      doc.text(label, x, yPos + 6);
+      doc.setTextColor(32, 33, 36); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+      doc.text(String(val), x, yPos + 14);
+    });
+    yPos += 26;
+
+    // ── Summary totals ───────────────────────────────────────────────────────
+    const totalWage  = entries.reduce((s, e) => s + Number(e.wage || 0), 0);
+    const totalOT    = attendance.reduce((s, a) => s + Number(a.otAmount || 0), 0);
+    const totalAdv   = attendance.reduce((s, a) => s + Number(a.advance || 0), 0);
+    const totalMaint = maintenanceRecs.reduce((s, m) => s + Number(m.wageAmount || 0), 0);
+    const totalNet   = totalWage + totalOT + totalMaint - totalAdv;
+    const presentDays = attendance.filter(a => isWorking(a.status)).length;
+
+    doc.setFillColor(255, 255, 255); doc.setDrawColor(218, 220, 224);
+    doc.rect(15, yPos, 180, 18, 'FD');
+    [
+      ['WORK ENTRIES',    String(entries.length),    20],
+      ['ATTENDANCE DAYS', String(attendance.length), 62],
+      ['PRESENT DAYS',    String(presentDays),       104],
+      ['TOTAL EARNINGS',  'Rs.' + totalNet.toLocaleString(), 148]
+    ].forEach(([label, val, x]) => {
+      doc.setTextColor(184, 134, 11); doc.setFontSize(7); doc.setFont('helvetica', 'normal');
+      doc.text(label, x, yPos + 6);
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+      if (label === 'TOTAL EARNINGS') doc.setTextColor(30, 126, 52);
+      else doc.setTextColor(32, 33, 36);
+      doc.text(val, x, yPos + 14);
+    });
+    yPos += 24;
+
+    const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+
+    // ── Attendance Table ─────────────────────────────────────────────────────
+    if (attendance.length > 0) {
+      doc.setTextColor(184, 134, 11);
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+      doc.text('ATTENDANCE RECORD', 15, yPos); yPos += 4;
+      const statusLabel = { present: 'Present', absent: 'Absent', forenoon: 'Forenoon', afternoon: 'Afternoon' };
+      doc.autoTable({
+        startY: yPos,
+        head: [['Date', 'Status', 'OT Hours', 'OT Amount', 'Advance']],
+        body: [...attendance]
+          .sort((a, b) => normalizeDate(a.date) > normalizeDate(b.date) ? 1 : -1)
+          .map(a => [
+            fmtDate(a.date),
+            statusLabel[a.status] || a.status || '',
+            a.otHours  ? a.otHours + ' hrs' : '—',
+            a.otAmount ? 'Rs.' + a.otAmount  : '—',
+            a.advance  ? 'Rs.' + a.advance   : '—'
+          ]),
+        margin: { left: 15, right: 15 },
+        headStyles: { fillColor: [184, 134, 11], textColor: [255, 255, 255], fontSize: 7 },
+        bodyStyles: { fontSize: 7, textColor: [60, 64, 67] },
+        alternateRowStyles: { fillColor: [252, 252, 252] },
+        styles: { lineColor: [218, 220, 224], lineWidth: 0.1, cellPadding: 1.5 },
+        columnStyles: { 0: { cellWidth: 28 }, 1: { cellWidth: 32 }, 2: { cellWidth: 28 }, 3: { cellWidth: 32 }, 4: { cellWidth: 30 } },
+        theme: 'grid'
+      });
+      yPos = doc.lastAutoTable.finalY + 8;
+    }
+
+    // ── Work Entries Table ───────────────────────────────────────────────────
+    if (entries.length > 0) {
+      if (yPos > 230) { doc.addPage(); yPos = 20; }
+      doc.setTextColor(184, 134, 11);
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+      doc.text('WORK ENTRIES', 15, yPos); yPos += 4;
+      doc.autoTable({
+        startY: yPos,
+        head: [['Date', 'Category', 'Assigned', 'Output', 'Not Done', 'Rate', 'Wage']],
+        body: [...entries]
+          .sort((a, b) => normalizeDate(a.date) > normalizeDate(b.date) ? 1 : -1)
+          .map(e => [
+            fmtDate(e.date),
+            catLabels[e.category] || e.category || '',
+            e.assignedTotal || e.assigned || 0,
+            e.output || 0,
+            e.notCompleted || 0,
+            e.rate ? 'Rs.' + e.rate : '—',
+            'Rs.' + (e.wage || 0).toLocaleString()
+          ]),
+        margin: { left: 15, right: 15 },
+        headStyles: { fillColor: [184, 134, 11], textColor: [255, 255, 255], fontSize: 7 },
+        bodyStyles: { fontSize: 7, textColor: [60, 64, 67] },
+        alternateRowStyles: { fillColor: [252, 252, 252] },
+        styles: { lineColor: [218, 220, 224], lineWidth: 0.1, cellPadding: 1.5 },
+        columnStyles: { 0: { cellWidth: 26 }, 1: { cellWidth: 36 }, 2: { cellWidth: 22 }, 3: { cellWidth: 22 }, 4: { cellWidth: 20 }, 5: { cellWidth: 24 }, 6: { cellWidth: 24 } },
+        theme: 'grid'
+      });
+      yPos = doc.lastAutoTable.finalY + 8;
+    }
+
+    // ── Maintenance Table ────────────────────────────────────────────────────
+    if (maintenanceRecs.length > 0) {
+      if (yPos > 230) { doc.addPage(); yPos = 20; }
+      doc.setTextColor(251, 146, 60);
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+      doc.text('MAINTENANCE RECORDS', 15, yPos); yPos += 4;
+      doc.autoTable({
+        startY: yPos,
+        head: [['Date', 'Work Description', 'OT', 'Payment']],
+        body: [...maintenanceRecs]
+          .sort((a, b) => normalizeDate(a.date) > normalizeDate(b.date) ? 1 : -1)
+          .map(m => [
+            fmtDate(m.date),
+            m.workDescription || '—',
+            m.otHours ? m.otHours + ' hrs' : '—',
+            'Rs.' + (m.wageAmount || 0).toLocaleString()
+          ]),
+        margin: { left: 15, right: 15 },
+        headStyles: { fillColor: [251, 146, 60], textColor: [255, 255, 255], fontSize: 7 },
+        bodyStyles: { fontSize: 7, textColor: [60, 64, 67] },
+        alternateRowStyles: { fillColor: [252, 252, 252] },
+        styles: { lineColor: [218, 220, 224], lineWidth: 0.1, cellPadding: 1.5 },
+        columnStyles: { 0: { cellWidth: 26 }, 1: { cellWidth: 95 }, 2: { cellWidth: 22 }, 3: { cellWidth: 27 } },
+        theme: 'grid'
+      });
+      yPos = doc.lastAutoTable.finalY + 8;
+    }
+
+    // ── Total bar ────────────────────────────────────────────────────────────
+    if (yPos > 265) { doc.addPage(); yPos = 20; }
+    doc.setFillColor(184, 134, 11);
+    doc.rect(15, yPos, 180, 10, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+    const breakdown = 'Wage: Rs.' + totalWage.toLocaleString() +
+      '  +OT: Rs.' + totalOT.toLocaleString() +
+      (totalMaint ? '  +Maint: Rs.' + totalMaint.toLocaleString() : '') +
+      '  −Adv: Rs.' + totalAdv.toLocaleString() +
+      '  =  NET: Rs.' + totalNet.toLocaleString();
+    doc.text(breakdown, 20, yPos + 7);
+
+    const filename = 'backup_' + (w.name || w.id).replace(/\s+/g, '_') + '_' + (w.empId || w.id) + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+    doc.save(filename);
+  } catch (err) {
+    console.error('PDF backup failed:', err);
+    showToast('PDF generation failed — CSV backup was saved');
   }
 }
 

@@ -12,6 +12,12 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
 </head>
 <body>
   <div class="app">
@@ -61,6 +67,7 @@
             <input class="form-input" id="l-pass" type="password" placeholder="Enter password" />
           </div>
           <button class="pill-btn" style="width:100%; padding:14px; font-size:16px;" onclick="doLogin()">Login</button>
+          <button class="pill-btn secondary" style="width:100%; margin-top:8px; font-size:12px; opacity:0.7;" onclick="if(confirm('Clear LOCAL browser cache only.\n\nThis does NOT touch Google Sheets or any cloud data.\n\nAfter clearing, login again to re-sync all data from the cloud.')) { localStorage.clear(); location.reload(); }">Clear Local Cache</button>
         </div>
       </div>
     </div>

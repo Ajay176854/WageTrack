@@ -266,7 +266,7 @@ function markAllPresent() {
     
     let rec = targetAttendance.find(a => normalizeDate(a.date) === date && a.workerId === w.id);
     if (!rec) {
-      targetAttendance.push({ date, workerId: w.id, status: 'present', otAmount: 0, otHours: 0, advance: 0 });
+      targetAttendance.push({ id: uid(), date, workerId: w.id, status: 'present', otAmount: 0, otHours: 0, advance: 0 });
     } else { rec.status = 'present'; }
   });
   save();
@@ -292,7 +292,7 @@ function updateAttendance(date, wid, field, val) {
   
   let rec = targetAttendance.find(a => normalizeDate(a.date) === date && a.workerId === wid);
   if (!rec) {
-    rec = { date, workerId: wid, status: 'present', otAmount: 0, otHours: 0, advance: 0 };
+    rec = { id: uid(), date, workerId: wid, status: 'present', otAmount: 0, otHours: 0, advance: 0 };
     targetAttendance.push(rec);
   }
   if (field === 'status') rec.status = val;

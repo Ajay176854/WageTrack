@@ -69,8 +69,9 @@ function getWorkerUnit(w) {
 function doGet(e) {
     return HtmlService.createHtmlOutput(
         "<h1>WageTrack Pro Cloud: ONLINE</h1>" +
-        "<p>Version: 6.0 | Units: 1-4 Active | Maintenance: Active | Selective Sync Enabled</p>" +
-        "<p>Sheets: Workers, Unit1-4 Entries, Unit1-4 Attendance, Maintenance, Users</p>"
+        "<p>Version: 6.2 | Units: 1-4 Active | Maintenance: Active | Selective Sync Enabled</p>" +
+        "<p>Sheets: Workers, Unit1-4 Entries, Unit1-4 Attendance, Maintenance, Users</p>" +
+        "<p>v6.2: Strict column schemas — no dynamic expansion, extra app fields ignored, old columns cleaned on write</p>"
     );
 }
 
@@ -246,46 +247,69 @@ function fetchAllData(ss) {
     };
 }
 
-// 7. SAVE TO SHEET — writes array of objects to named sheet
+// 7. SAVE TO SHEET — strict predefined column schemas, no dynamic expansion
+// Extra fields sent by the app (assigned, mAssigned, workerName, homeUnit, type, etc.)
+// are silently ignored. Old extra columns are wiped when the sheet is rewritten.
 function saveToSheet(ss, sheetName, dataArray) {
-    let sheet = ss.getSheetByName(sheetName);
+    var sheet = ss.getSheetByName(sheetName);
     if (!sheet) sheet = ss.insertSheet(sheetName);
-    // Read existing headers or create from data keys
-    let headers = [];
-    if (sheet.getLastColumn() > 0) {
-        headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    } else if (dataArray && dataArray.length > 0) {
-        headers = Object.keys(dataArray[0]);
-        sheet.appendRow(headers);
+
+    // Authoritative column order per sheet — matches Google Sheets headers exactly.
+    // 'type' is intentionally absent from Workers (legacy field replaced by unit+category).
+    // 'workDesc' is kept in Entries for compatibility but should always be '' for unit entries
+    // (maintenance work goes to the Maintenance sheet, not unit entry sheets).
+    var STRICT_HEADERS = {
+        'Workers':          ['id','empId','phone','name','unit','category','emoji','salary','paidLeaves','dailyWage','flatAmount','otRate'],
+        'Unit1_Entries':    ['id','workerId','date','category','assignedMorning','assignedAfternoon','assignedTotal','output','notCompleted','rate','pieces','packRate','wage','workDesc'],
+        'Unit2_Entries':    ['id','workerId','date','category','assignedMorning','assignedAfternoon','assignedTotal','output','notCompleted','rate','pieces','packRate','wage','workDesc'],
+        'Unit3_Entries':    ['id','workerId','date','category','assignedMorning','assignedAfternoon','assignedTotal','output','notCompleted','rate','pieces','packRate','wage','workDesc'],
+        'Unit4_Entries':    ['id','workerId','date','category','assignedMorning','assignedAfternoon','assignedTotal','output','notCompleted','rate','pieces','packRate','wage','workDesc'],
+        'Unit1_Attendance': ['id','date','workerId','status','otHours','otAmount','advance'],
+        'Unit2_Attendance': ['id','date','workerId','status','otHours','otAmount','advance'],
+        'Unit3_Attendance': ['id','date','workerId','status','otHours','otAmount','advance'],
+        'Unit4_Attendance': ['id','date','workerId','status','otHours','otAmount','advance'],
+        'Maintenance':      ['id','date','workerId','workerName','homeUnit','homeCategory','workDescription','wageAmount','otHours','otAmount','advance'],
+        'Users':            ['username','password','gmail','role','access']
+    };
+
+    var headers = STRICT_HEADERS[sheetName];
+    if (!headers) {
+        console.log('saveToSheet: unknown sheet "' + sheetName + '" — skipped');
+        return;
     }
 
-    // Clear existing data rows
-    if (sheet.getLastRow() > 1 && headers.length > 0) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    var numericFields = [
+        'salary','otRate','flatAmount','dailyWage','paidLeaves',
+        'wage','rate','pieces','packRate',
+        'assignedTotal','assignedMorning','assignedAfternoon',
+        'output','notCompleted','otHours','otAmount','advance','wageAmount'
+    ];
+
+    // Clear ALL existing content (header row + data rows, all columns).
+    // This removes old extra columns like 'type', 'assigned', 'workerName' etc.
+    var existingCols = sheet.getLastColumn();
+    var existingRows = sheet.getLastRow();
+    var clearCols = Math.max(existingCols, headers.length);
+    if (existingRows > 0 && clearCols > 0) {
+        sheet.getRange(1, 1, existingRows, clearCols).clearContent();
     }
+
+    // Write strict header row
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 
     if (!dataArray || dataArray.length === 0) return;
 
-    // Map objects to rows using headers as column order
-    const rows = dataArray.map(obj => {
-        return headers.map(h => {
-            let val = obj[h];
-            const numericFields = [
-                'salary', 'otRate', 'flatAmount', 'dailyWage', 'paidLeaves',
-                'wage', 'rate', 'pieces', 'packRate',
-                'assignedTotal', 'assignedMorning', 'assignedAfternoon',
-                'output', 'notCompleted', 'otHours', 'otAmount', 'advance',
-                'wageAmount'
-            ];
-            if (numericFields.includes(h) && (val === undefined || val === null)) return 0;
+    // Write data rows — only columns in headers; unknown fields are ignored
+    var rows = dataArray.map(function(obj) {
+        return headers.map(function(h) {
+            var val = obj[h];
+            if (numericFields.indexOf(h) !== -1 && (val === undefined || val === null || val === '')) return 0;
             if (val && typeof val === 'object') return JSON.stringify(val);
             return (val !== undefined && val !== null) ? val : '';
         });
     });
 
-    if (rows.length > 0) {
-        sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-    }
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
 }
 
 // 8. GET SHEET DATA — reads named sheet, returns array of objects
@@ -295,11 +319,18 @@ function getSheetData(ss, sheetName) {
     const data = sheet.getDataRange().getValues();
     if (data.length < 2) return [];
     const headers = data[0];
+    const numericFields = [
+        'salary', 'otRate', 'flatAmount', 'dailyWage', 'paidLeaves',
+        'wage', 'rate', 'pieces', 'packRate',
+        'assigned', 'assignedTotal', 'assignedMorning', 'assignedAfternoon',
+        'output', 'notCompleted', 'otHours', 'otAmount', 'advance',
+        'wageAmount'
+    ];
     return data.slice(1)
-        .filter(row => row.some(cell => cell !== '' && cell !== null))
-        .map(row => {
+        .filter(function(row) { return row.some(function(cell) { return cell !== '' && cell !== null; }); })
+        .map(function(row) {
             const obj = {};
-            headers.forEach((h, i) => {
+            headers.forEach(function(h, i) {
                 let val = row[i];
                 if (val instanceof Date || (val && typeof val.getMonth === 'function')) {
                     val = Utilities.formatDate(val, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
@@ -309,6 +340,10 @@ function getSheetData(ss, sheetName) {
                         val = JSON.parse(val);
                     }
                 } catch (e) { }
+                // Convert empty-string numeric fields to 0 so calculations don't get NaN
+                if (numericFields.indexOf(h) !== -1 && (val === '' || val === null || val === undefined)) {
+                    val = 0;
+                }
                 obj[h] = val;
             });
             return obj;

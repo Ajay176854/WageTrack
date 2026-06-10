@@ -126,20 +126,35 @@ function openQuickAssign(unitType, category) {
   const dateInp = document.getElementById('qa-date');
   if (dateInp) dateInp.value = todayStr();
 
+  // Warn if attendance hasn't been marked yet; build absent set for visual flags
+  const today = todayStr();
+  const todayAtt = getAllAttendance().filter(a => normalizeDate(a.date) === today);
+  const unitWorkerIds = targetWorkers.map(w => w.id);
+  const hasAttendance = todayAtt.some(a => unitWorkerIds.includes(a.workerId));
+  const absentToday = new Set(
+    todayAtt.filter(a => a.status === 'absent' && unitWorkerIds.includes(a.workerId)).map(a => a.workerId)
+  );
+  if (!hasAttendance) {
+    showToast(`⚠ Attendance not marked for Unit ${unitNum} yet — mark attendance first so absent workers are skipped`);
+  }
+
   const list = document.getElementById('qa-workers-list');
   if (list) {
-    list.innerHTML = targetWorkers.map(w => `
-      <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; background:var(--surface-raised); padding:12px; border-radius:12px; border:1px solid var(--border);">
+    list.innerHTML = targetWorkers.map(w => {
+      const isAbsent = absentToday.has(w.id);
+      return `
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; background:var(--surface-raised); padding:12px; border-radius:12px; border:1px solid var(--border); ${isAbsent ? 'opacity:0.45;' : ''}">
         <div style="font-size:20px;">${w.emoji || '👷'}</div>
         <div style="flex:1;">
-          <div style="font-size:14px; font-weight:700; color:var(--text-bright);">${w.name}</div>
+          <div style="font-size:14px; font-weight:700; color:var(--text-bright);">${w.name}${isAbsent ? ' <span style="font-size:10px;color:#ff7b72;font-weight:600;background:rgba(248,81,73,.15);padding:2px 6px;border-radius:4px;margin-left:4px;">ABSENT</span>' : ''}</div>
           <div style="font-size:10px; color:var(--text-muted); font-family:var(--mono);">${w.empId || ''} · ${w.category || w.type || 'piece_work'}</div>
         </div>
         <div style="display:flex; gap:8px; align-items:center;">
-          <input type="number" id="qa-kg-${w.id}" class="form-input" style="width:72px; padding:8px; font-size:13px; text-align:center; height:36px;" placeholder="${unitLabel}" oninput="updateQAPreview()" />
+          <input type="number" id="qa-kg-${w.id}" class="form-input" style="width:72px; padding:8px; font-size:13px; text-align:center; height:36px;" placeholder="${unitLabel}" oninput="updateQAPreview()" ${isAbsent ? 'disabled' : ''} />
           <div style="font-size:12px; font-family:var(--mono); color:var(--accent); min-width:60px; text-align:right; font-weight:700;" id="qa-preview-${w.id}">₹0</div>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
   const modal = document.getElementById('modal-quick-assign');
   if (modal) modal.classList.add('open');
@@ -247,6 +262,10 @@ function saveQuickAssign() {
   let saved = 0;
 
   targetWorkers.forEach(w => {
+    // Skip workers marked absent for this date
+    const attRec = getAllAttendance().find(a => a.workerId === w.id && normalizeDate(a.date) === date);
+    if (attRec && attRec.status === 'absent') return;
+
     const qtyEl = document.getElementById(`qa-kg-${w.id}`);
     const qty = parseFloat(qtyEl ? qtyEl.value : 0) || 0;
     if (qty <= 0) return;

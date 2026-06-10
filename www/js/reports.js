@@ -215,6 +215,7 @@ function renderReport() {
   Object.keys(workerMap).forEach(wid => {
     let w = workerMap[wid];
     const workerInfo = workerById(wid);
+    if (!workerInfo) { delete workerMap[wid]; return; }
     const activeDates = new Set([...Object.keys(w.daily), ...attFiltered.filter(a => a.workerId === wid && isWorking(a.status)).map(a => normalizeDate(a.date))]);
     w.days = activeDates.size;
 
@@ -281,6 +282,7 @@ function renderReport() {
 
     Object.entries(workerMap).forEach(([wid, data]) => {
       const workerInfo = workerById(wid);
+      if (!workerInfo) return;
       const u = workerInfo.unit || getProdKey(workerInfo.type) || 'unit1';
       if (grouped[u]) grouped[u].push({ wid, data });
     });
@@ -295,6 +297,7 @@ function renderReport() {
       const catGroup = {};
       grouped[unit].forEach(item => {
         const workerInfo = workerById(item.wid);
+        if (!workerInfo) return;
         const cat = getNormalizedCategory(workerInfo) || 'piece_work';
         if (!catGroup[cat]) catGroup[cat] = [];
         catGroup[cat].push(item);
@@ -328,6 +331,7 @@ function renderReport() {
     const catGroup = {};
     Object.entries(workerMap).forEach(([wid, data]) => {
       const workerInfo = workerById(wid);
+      if (!workerInfo) return;
       const cat = getNormalizedCategory(workerInfo) || 'piece_work';
       if (!catGroup[cat]) catGroup[cat] = [];
       catGroup[cat].push({ wid, data });
@@ -364,7 +368,7 @@ function renderReport() {
     </div>`;
 
     maintenanceFiltered.forEach(m => {
-      const dateLabel = new Date(m.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const dateLabel = new Date(m.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
       maintHtml += `
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;margin:0 16px 12px;padding:12px;display:flex;justify-content:space-between;align-items:center;">
           <div>
@@ -412,7 +416,7 @@ function buildWorkerCard(wid, data) {
     const dd = data.daily[d];
     const statusDot = dd.status === 'absent' ? '✕' : isHalfDay(dd.status) ? '½' : '✓';
     return `<tr style="border-bottom:1px solid var(--border);font-size:11px;">
-      <td style="padding:5px;">${statusDot} ${new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
+      <td style="padding:5px;">${statusDot} ${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
       <td style="text-align:right;">${dd.assigned || '—'}</td>
       <td style="text-align:right;">${dd.output || '—'}</td>
       <td style="text-align:right;">₹${dd.piece.toLocaleString()}</td>
@@ -525,6 +529,7 @@ async function exportReportPDF(autoCloud = false) {
   // Calculate days, permanent wages, and paid leave bonus
   Object.keys(workerMap).forEach(wid => {
     const w = workerById(wid);
+    if (!w) { delete workerMap[wid]; return; }
     const activeDates = new Set([
       ...filtered.filter(e => e.workerId === wid).map(e => normalizeDate(e.date)),
       ...attFiltered.filter(a => a.workerId === wid && isWorking(a.status)).map(a => normalizeDate(a.date))
@@ -728,7 +733,7 @@ async function exportReportPDF(autoCloud = false) {
         const dailyData = Object.keys(data.daily).sort().map(d => {
           const dd = data.daily[d];
           const statusDot = dd.status === 'absent' ? 'X' : isHalfDay(dd.status) ? 'H' : 'P';
-          const dateStr = new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+          const dateStr = new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
           return [
             statusDot + ' ' + dateStr,
             dd.assigned ? dd.assigned.toFixed(1) : '-',
@@ -789,7 +794,7 @@ async function exportReportPDF(autoCloud = false) {
 
     const maintenanceData = maintenanceFiltered.map(m => {
       const w = workerById(m.workerId);
-      const dateStr = new Date(m.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const dateStr = new Date(m.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
       return [
         dateStr,
         w ? w.name : 'Unknown',
@@ -979,14 +984,6 @@ async function cloudSyncReport() {
   }
 
   try {
-    const { jsPDF } = window.jspdf;
-    const { fromDate, toDate, workerFilter, productionFilter, label } = reportState;
-    // Generate the PDF exactly as exportReportPDF does, but specifically for cloud
-    const doc = new jsPDF('p', 'mm', 'a4');
-
-    // ... (logic to build report data same as exportReportPDF)
-    // Actually, it's better to just fix exportReportPDF to return the result correctly
-
     const success = await exportReportPDF(true);
     if (success) {
       showToast('✓ Report sent to your Google Drive/Email');
