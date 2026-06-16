@@ -1,6 +1,28 @@
+# Dependencies
 node_modules/
+package-lock.json
+
+# Build output
+dist/
+
+# Environment
+.env
+.env.local
+.env.production.local
+.env.development.local
+
+# Capacitor
 android/build/
 android/app/build/
 android/local.properties
-.DS_Store
 
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Legacy (will be removed)
+_vite_temp/
