@@ -3,11 +3,13 @@
   bottom: 0;
   left: 0;
   right: 0;
-  background: var(--bg-card);
-  border-top: 1px solid var(--border);
+  background: rgba(10, 10, 10, 0.88);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border-top: 1px solid rgba(255, 107, 0, 0.06);
   display: flex;
   justify-content: space-around;
-  padding: 8px 16px calc(8px + var(--safe-bottom));
+  padding: 6px 12px calc(6px + var(--safe-bottom));
   z-index: 40;
 }
 
@@ -16,30 +18,40 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  color: var(--text-secondary);
+  gap: 3px;
+  color: var(--text-muted);
   text-decoration: none;
-  padding: 8px 16px;
-  border-radius: 12px;
-  transition: all 0.2s;
+  padding: 8px 18px;
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-normal);
+  position: relative;
 }
 
 .iconWrapper {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform var(--transition-bounce);
 }
 
 .label {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .active {
   color: var(--accent);
+  background: rgba(255, 107, 0, 0.12);
+  box-shadow: 0 0 20px rgba(255, 107, 0, 0.08);
+}
+
+.active .iconWrapper {
+  transform: translateY(-1px) scale(1.08);
 }
 
 .navItem:hover:not(.active) {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
 }

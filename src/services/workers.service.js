@@ -5,7 +5,7 @@ export const workersService = {
    * Fetch all active workers, optionally filtered by unit
    */
   async getAll(filters = {}) {
-    let query = supabase.from('workers').select('*').eq('is_active', true)
+    let query = supabase.from('workers').select('*')
 
     if (filters.unit) {
       query = query.eq('unit', filters.unit)
@@ -65,12 +65,12 @@ export const workersService = {
   },
 
   /**
-   * Soft delete — sets is_active = false
+   * Soft delete — uses hard delete since is_active column is not in the schema
    */
   async softDelete(id) {
     const { error } = await supabase
       .from('workers')
-      .update({ is_active: false })
+      .delete()
       .eq('id', id)
     if (error) throw error
   },

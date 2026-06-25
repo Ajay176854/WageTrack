@@ -24,17 +24,26 @@ export function AppProvider({ children }) {
     if (!profile) return
     setDataLoading(true)
     try {
-      const [workersData, entriesData, attendanceData, maintenanceData] = await Promise.all([
+      const results = await Promise.allSettled([
         workersService.getAll(),
         entriesService.getAll(),
         attendanceService.getAll(),
         maintenanceService.getAll(),
       ])
 
-      setWorkers(workersData)
-      setEntries(entriesData)
-      setAttendance(attendanceData)
-      setMaintenance(maintenanceData)
+      const [workersResult, entriesResult, attendanceResult, maintenanceResult] = results
+
+      if (workersResult.status === 'fulfilled') setWorkers(workersResult.value)
+      else console.error('Workers fetch failed:', workersResult.reason)
+
+      if (entriesResult.status === 'fulfilled') setEntries(entriesResult.value)
+      else console.error('Entries fetch failed:', entriesResult.reason)
+
+      if (attendanceResult.status === 'fulfilled') setAttendance(attendanceResult.value)
+      else console.error('Attendance fetch failed:', attendanceResult.reason)
+
+      if (maintenanceResult.status === 'fulfilled') setMaintenance(maintenanceResult.value)
+      else console.error('Maintenance fetch failed:', maintenanceResult.reason)
     } catch (err) {
       console.error('Failed to fetch data:', err)
       showToast('Failed to load data')

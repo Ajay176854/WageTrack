@@ -73,7 +73,7 @@ export default function ReportsPage() {
       setReportData({ rows, totals, range })
     } catch (err) {
       console.error(err)
-      alert('Failed to generate report')
+      alert('Failed to generate report: ' + err.message + '\n' + err.stack)
     } finally {
       setLoading(false)
     }

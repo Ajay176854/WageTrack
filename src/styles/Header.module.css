@@ -2,9 +2,11 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: calc(16px + var(--safe-top)) 16px 16px;
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border);
+  padding: calc(16px + var(--safe-top)) 20px 14px;
+  background: rgba(10, 10, 10, 0.85);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border-bottom: 1px solid rgba(255, 107, 0, 0.08);
   z-index: 10;
 }
 
@@ -16,8 +18,9 @@
 
 .headerLogo {
   position: relative;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  filter: drop-shadow(0 2px 10px rgba(255, 107, 0, 0.3));
 }
 
 .headerLogo img {
@@ -28,54 +31,73 @@
 
 .statusDot {
   position: absolute;
-  bottom: -2px;
-  right: -2px;
+  bottom: -1px;
+  right: -1px;
   width: 10px;
   height: 10px;
-  background: var(--accent2);
-  border: 2px solid var(--bg-card);
+  background: var(--accent);
+  border: 2px solid var(--bg-card-solid);
   border-radius: 50%;
+  box-shadow: 0 0 8px rgba(255, 107, 0, 0.4);
+  animation: statusPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 107, 0, 0.3); }
+  50% { box-shadow: 0 0 14px rgba(255, 107, 0, 0.5), 0 0 24px rgba(255, 107, 0, 0.15); }
 }
 
 .brand {
-  font-size: 1.25rem;
+  font-size: 1.3rem;
   font-weight: 800;
   color: #fff;
+  letter-spacing: -0.03em;
 }
 
 .brandAccent {
-  color: var(--accent);
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .headerActions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .iconBtn {
-  background: transparent;
-  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px;
-  border-radius: 50%;
+  padding: 9px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-normal);
 }
 
 .iconBtn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text);
+  background: rgba(255, 107, 0, 0.08);
+  color: var(--accent);
+  border-color: rgba(255, 107, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.iconBtn:active {
+  transform: translateY(0);
 }
 
 .workerBadge {
-  background: rgba(240, 192, 64, 0.15);
+  background: var(--accent-glow);
   color: var(--accent);
-  padding: 4px 10px;
-  border-radius: 12px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
   font-size: 0.75rem;
   font-weight: 700;
+  border: 1px solid rgba(255, 107, 0, 0.18);
+  letter-spacing: 0.01em;
 }

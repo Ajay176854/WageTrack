@@ -2,6 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  animation: fadeInUp 0.4s ease-out;
 }
 
 .header {
@@ -12,20 +13,29 @@
 }
 
 .header h2 {
-  font-size: 1.25rem;
+  font-size: 1.3rem;
   color: #fff;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .datePicker {
-  background: var(--bg-card);
+  background: var(--bg-elevated);
   color: #fff;
   border: 1px solid var(--border);
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
   font-family: inherit;
   font-weight: 600;
+  font-size: 0.9rem;
   width: auto;
+  transition: all var(--transition-normal);
+  cursor: pointer;
+}
+
+.datePicker:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .controls {
@@ -42,9 +52,23 @@
   display: flex;
   justify-content: space-around;
   background: var(--bg-card);
-  border-radius: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  border: 1px solid rgba(255, 107, 0, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.statsBar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 107, 0, 0.1), transparent);
 }
 
 .statGroup {
@@ -55,36 +79,55 @@
 }
 
 .statLabel {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
 }
 
 .statValue {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
 }
 
 .attendanceList {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .attCard {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  transition: opacity 0.2s;
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.attCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
 }
 
 .attCard.loading {
-  opacity: 0.6;
+  opacity: 0.5;
   pointer-events: none;
+  filter: blur(1px);
 }
 
 .attHeader {
@@ -100,18 +143,19 @@
 }
 
 .avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 107, 0, 0.06);
+  border: 1px solid rgba(255, 107, 0, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
 }
 
 .name {
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
   font-size: 0.95rem;
 }
@@ -129,40 +173,50 @@
 }
 
 .statusBtn {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border);
   color: var(--text-secondary);
   padding: 10px 4px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-weight: 600;
   font-size: 0.8rem;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.statusBtn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 107, 0, 0.15);
 }
 
 .activePresent {
-  background: rgba(74, 222, 128, 0.15);
-  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.3);
   color: var(--accent2);
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.1);
 }
 
 .activeAbsent {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(244, 63, 94, 0.1);
+  border-color: rgba(244, 63, 94, 0.3);
   color: var(--accent3);
+  box-shadow: 0 0 14px rgba(244, 63, 94, 0.1);
 }
 
 .activeHalf {
-  background: rgba(96, 165, 250, 0.15);
-  border-color: rgba(96, 165, 250, 0.3);
-  color: #60a5fa;
+  background: rgba(129, 140, 248, 0.1);
+  border-color: rgba(129, 140, 248, 0.3);
+  color: var(--accent4);
+  box-shadow: 0 0 14px rgba(129, 140, 248, 0.1);
 }
 
 .extraControls {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  padding-top: 12px;
+  padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 
@@ -173,12 +227,16 @@
 }
 
 .inputGroup label {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  width: 50px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  width: 55px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
 }
 
 .inputGroup input {
   padding: 6px 10px;
   font-size: 0.9rem;
+  font-family: 'JetBrains Mono', monospace;
 }

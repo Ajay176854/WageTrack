@@ -39,8 +39,49 @@ export function AuthProvider({ children }) {
 
   async function loadProfile(authId) {
     try {
-      const profileData = await usersService.getByAuthId(authId)
-      setProfile(profileData)
+      // First try to fetch existing profile
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('auth_id', authId)
+
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        setProfile(data[0])
+      } else {
+        // Profile row doesn't exist (e.g. RLS blocked insert during signup)
+        // Auto-create admin profile for the first user
+        const session = (await supabase.auth.getSession()).data.session
+        const email = session?.user?.email || ''
+        const username = email.split('@')[0] || 'Admin'
+
+        const { data: newProfile, error: insertErr } = await supabase
+          .from('users')
+          .insert({
+            auth_id: authId,
+            username,
+            email,
+            role: 'admin',
+            access: { unit1: ['attendance', 'work', 'payment'], unit2: ['attendance', 'work', 'payment'], unit3: ['attendance', 'work', 'payment'], unit4: ['attendance', 'work', 'payment'], maintenance: ['maintenance'] }
+          })
+          .select()
+          .single()
+
+        if (insertErr) {
+          console.error('Failed to auto-create profile:', insertErr)
+          // Still set a fallback profile so the app can work
+          setProfile({
+            auth_id: authId,
+            username,
+            email,
+            role: 'admin',
+            access: { unit1: ['attendance', 'work', 'payment'], unit2: ['attendance', 'work', 'payment'], unit3: ['attendance', 'work', 'payment'], unit4: ['attendance', 'work', 'payment'], maintenance: ['maintenance'] }
+          })
+        } else {
+          setProfile(newProfile)
+        }
+      }
     } catch (err) {
       console.error('Failed to load user profile:', err)
       setProfile(null)

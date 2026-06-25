@@ -15,6 +15,7 @@ export default function QuickAssign({ isOpen, onClose, defaultUnit }) {
   const [unit, setUnit] = useState(defaultUnit || 'unit1')
   const [date, setDate] = useState(todayStr())
   const [globalRate, setGlobalRate] = useState('')
+  const [globalWeight, setGlobalWeight] = useState('')
   
   const [workerOutputs, setWorkerOutputs] = useState({})
 
@@ -28,6 +29,15 @@ export default function QuickAssign({ isOpen, onClose, defaultUnit }) {
       ...prev,
       [workerId]: value
     }))
+  }
+
+  const handleApplyGlobalWeight = () => {
+    if (!globalWeight || Number(globalWeight) <= 0) return
+    const newOutputs = {}
+    eligibleWorkers.forEach(w => {
+      newOutputs[w.id] = globalWeight
+    })
+    setWorkerOutputs(prev => ({ ...prev, ...newOutputs }))
   }
 
   const handleSubmit = async (e) => {
@@ -111,18 +121,41 @@ export default function QuickAssign({ isOpen, onClose, defaultUnit }) {
           </div>
         </div>
 
-        <div className={styles.formGroup}>
-          <label>Global Rate (₹/kg) *</label>
-          <input 
-            type="number" 
-            value={globalRate} 
-            onChange={(e) => setGlobalRate(e.target.value)} 
-            step="0.01" 
-            min="0" 
-            required 
-            placeholder="Applies to all workers below"
-          />
+        <div className={styles.formRow}>
+          <div className={styles.formGroup}>
+            <label>Global Rate (₹/kg) *</label>
+            <input 
+              type="number" 
+              value={globalRate} 
+              onChange={(e) => setGlobalRate(e.target.value)} 
+              step="0.01" 
+              min="0" 
+              required 
+              placeholder="Rate per kg"
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label>Weight/Worker (KG)</label>
+            <input 
+              type="number" 
+              value={globalWeight} 
+              onChange={(e) => setGlobalWeight(e.target.value)} 
+              step="0.01" 
+              min="0" 
+              placeholder="Applied to all"
+            />
+          </div>
         </div>
+        {globalWeight && Number(globalWeight) > 0 && (
+          <button 
+            type="button" 
+            className="btn btn-secondary" 
+            onClick={handleApplyGlobalWeight}
+            style={{ width: '100%' }}
+          >
+            Apply {globalWeight} kg to all workers
+          </button>
+        )}
 
         <div className={styles.sectionHeader}>
           <h3>Enter Outputs</h3>

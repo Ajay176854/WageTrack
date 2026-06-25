@@ -9,7 +9,7 @@
 .main {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
-  padding-bottom: calc(80px + var(--safe-bottom));
+  padding: 20px 16px;
+  padding-bottom: calc(90px + var(--safe-bottom));
   -webkit-overflow-scrolling: touch;
 }

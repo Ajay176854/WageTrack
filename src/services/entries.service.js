@@ -18,7 +18,7 @@ export const entriesService = {
     const unitsToQuery = filters.unit ? [filters.unit] : UNITS
 
     const fetchForUnit = async (unit) => {
-      let query = supabase.from(getTableName(unit)).select('*, unit: \'' + unit + '\'')
+      let query = supabase.from(getTableName(unit)).select('*')
 
       if (filters.workerId) query = query.eq('worker_id', filters.workerId)
       if (filters.date) query = query.eq('date', filters.date)

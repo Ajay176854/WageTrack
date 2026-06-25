@@ -10,7 +10,7 @@ import { formatCurrency } from '../utils/helpers'
 import styles from '../styles/Attendance.module.css'
 
 export default function AttendancePage() {
-  const { workers, attendance, currentUnit, setCurrentUnit, showToast } = useAppContext()
+  const { workers, attendance, setAttendance, currentUnit, setCurrentUnit, showToast } = useAppContext()
   
   const [date, setDate] = useState(todayStr())
   const [searchQuery, setSearchQuery] = useState('')
@@ -53,7 +53,17 @@ export default function AttendancePage() {
     }))
 
     try {
-      await attendanceService.bulkUpsert(records)
+      const saved = await attendanceService.bulkUpsert(records)
+      // Optimistically update global state so Home page reflects changes
+      setAttendance(prev => {
+        const updated = [...prev]
+        saved.forEach(rec => {
+          const idx = updated.findIndex(a => a.worker_id === rec.worker_id && a.date === rec.date && a.unit === rec.unit)
+          if (idx >= 0) updated[idx] = rec
+          else updated.push(rec)
+        })
+        return updated
+      })
       showToast(`Marked ${records.length} present`)
     } catch (err) {
       showToast('Failed to mark attendance')
@@ -64,8 +74,17 @@ export default function AttendancePage() {
   const handleUpdate = async (workerId, unit, field, value) => {
     setLoadingIds(prev => new Set(prev).add(workerId))
     try {
-      await attendanceService.updateField(workerId, date, field, value, unit)
-      // Note: real-time subscription will update the global state
+      const updated = await attendanceService.updateField(workerId, date, field, value, unit)
+      // Optimistically update global state so Home page reflects changes
+      setAttendance(prev => {
+        const idx = prev.findIndex(a => a.worker_id === workerId && a.date === date && a.unit === unit)
+        if (idx >= 0) {
+          const next = [...prev]
+          next[idx] = updated
+          return next
+        }
+        return [...prev, updated]
+      })
     } catch (err) {
       showToast('Failed to update')
     } finally {

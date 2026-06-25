@@ -2,52 +2,78 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  animation: fadeInUp 0.4s ease-out;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .header h2 {
-  font-size: 1.25rem;
+  font-size: 1.3rem;
   color: #fff;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .searchWrap {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .workersList {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* Worker Card */
 .workerCard {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
   display: flex;
   align-items: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.workerCard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--gradient-card);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
 }
 
 .workerCard:hover {
-  border-color: var(--accent);
+  border-color: rgba(255, 107, 0, 0.2);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), 0 0 16px rgba(255, 107, 0, 0.04);
+}
+
+.workerCard:hover::before {
+  opacity: 1;
+}
+
+.workerCard:active {
+  transform: translateY(0);
 }
 
 .workerAvatar {
   width: 48px;
   height: 48px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  background: rgba(255, 107, 0, 0.06);
+  border: 1px solid rgba(255, 107, 0, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -71,7 +97,7 @@
 }
 
 .workerName {
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
   font-size: 1rem;
   white-space: nowrap;
@@ -80,31 +106,37 @@
 }
 
 .workerId {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  font-family: monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
 }
 
 .workerMeta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .unitBadge {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-full);
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .categoryBadge {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
 }
 
 .workerWage {
@@ -113,20 +145,23 @@
 }
 
 .editBtn {
-  background: transparent;
-  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
   color: var(--text-secondary);
   padding: 8px;
   margin-left: 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all var(--transition-normal);
+  position: relative;
+  z-index: 1;
 }
 
 .editBtn:hover {
   color: var(--accent);
-  background: rgba(240, 192, 64, 0.1);
+  background: var(--accent-glow);
+  border-color: rgba(255, 107, 0, 0.18);
 }

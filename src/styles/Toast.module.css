@@ -1,6 +1,6 @@
 .toastContainer {
   position: fixed;
-  bottom: calc(80px + var(--safe-bottom));
+  bottom: calc(90px + var(--safe-bottom));
   left: 0;
   right: 0;
   display: flex;
@@ -11,20 +11,22 @@
 }
 
 .toast {
-  background: var(--accent2);
-  color: #000;
-  padding: 12px 20px;
-  border-radius: 30px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: var(--accent);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: var(--radius-full);
+  font-weight: 700;
+  font-size: 0.85rem;
+  box-shadow: 0 8px 28px rgba(255, 107, 0, 0.3);
   display: flex;
   align-items: center;
-  gap: 8px;
-  animation: toastFadeIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  gap: 10px;
+  animation: toastFadeIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 @keyframes toastFadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(24px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
