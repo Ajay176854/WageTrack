@@ -18,9 +18,9 @@ async function getJsPDF() {
  * Generate a standard WageTrack PDF header
  */
 function addPdfHeader(doc, title, subtitle = '') {
-  doc.setFillColor(13, 17, 23)
+  doc.setFillColor(10, 10, 10)
   doc.rect(0, 0, 210, 40, 'F')
-  doc.setTextColor(240, 192, 64)
+  doc.setTextColor(255, 107, 0)
   doc.setFontSize(22)
   doc.setFont('helvetica', 'bold')
   doc.text(title, 14, 18)
@@ -39,7 +39,7 @@ export async function generateWorkersListPDF(workers, currentUser) {
   const jsPDF = await getJsPDF()
   const doc = new jsPDF('p', 'mm', 'a4')
 
-  addPdfHeader(doc, 'WageTrack Workers List', `Exported by: ${currentUser.username} (${currentUser.role})`)
+  addPdfHeader(doc, 'WageTrack Workers List', `Exported by: ${currentUser?.username || 'Admin'}`)
 
   const tableData = workers.map((w) => [w.emp_id || w.id, w.name, (w.category || 'piece_work').toUpperCase()])
 
@@ -48,7 +48,7 @@ export async function generateWorkersListPDF(workers, currentUser) {
     head: [['EMP ID', 'Worker Name', 'Category']],
     body: tableData,
     theme: 'striped',
-    headStyles: { fillColor: [240, 192, 64], textColor: [0, 0, 0], fontStyle: 'bold' },
+    headStyles: { fillColor: [255, 107, 0], textColor: [255, 255, 255], fontStyle: 'bold' },
   })
 
   return doc
@@ -64,11 +64,8 @@ export async function generateReportPDF(title, periodLabel, reportRows, totals) 
   const startY = addPdfHeader(doc, title, `Period: ${periodLabel}`)
 
   // Summary section
-  doc.setFillColor(241, 243, 244)
+  doc.setFillColor(245, 245, 245)
   doc.rect(14, startY, 182, 18, 'F')
-  doc.setTextColor(184, 134, 11)
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'normal')
 
   const summaryItems = [
     ['TOTAL WORKERS', String(totals.workerCount || 0), 20],
@@ -78,24 +75,32 @@ export async function generateReportPDF(title, periodLabel, reportRows, totals) 
   ]
 
   summaryItems.forEach(([label, value, x]) => {
-    doc.setTextColor(184, 134, 11)
+    doc.setTextColor(255, 107, 0)
     doc.setFontSize(7)
+    doc.setFont('helvetica', 'bold')
     doc.text(label, x, startY + 6)
-    doc.setTextColor(32, 33, 36)
+    doc.setTextColor(20, 20, 20)
     doc.setFontSize(10)
     doc.setFont('helvetica', 'bold')
     doc.text(value, x, startY + 14)
-    doc.setFont('helvetica', 'normal')
   })
 
   // Data table
   if (reportRows.length > 0) {
     doc.autoTable({
       startY: startY + 24,
-      head: [reportRows[0].map(() => '').length ? Object.keys(reportRows[0]) : ['Worker', 'Days', 'Wage', 'OT', 'Advance', 'Net']],
-      body: reportRows.map((row) => Object.values(row)),
+      head: [['Worker', 'Category', 'Days', 'Wage', 'OT', 'Advance', 'Net']],
+      body: reportRows.map((row) => [
+        row.name,
+        row.category,
+        row.daysPresent,
+        `Rs.${row.wage}`,
+        `Rs.${row.ot}`,
+        `Rs.${row.advance}`,
+        `Rs.${row.net}`
+      ]),
       theme: 'striped',
-      headStyles: { fillColor: [240, 192, 64], textColor: [0, 0, 0], fontStyle: 'bold' },
+      headStyles: { fillColor: [255, 107, 0], textColor: [255, 255, 255], fontStyle: 'bold' },
       styles: { fontSize: 8, cellPadding: 3 },
     })
   }
@@ -107,5 +112,19 @@ export async function generateReportPDF(title, periodLabel, reportRows, totals) 
  * Download a jsPDF doc
  */
 export function downloadPdf(doc, filename) {
-  doc.save(filename)
+  try {
+    const blob = doc.output('blob')
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = url
+    a.download = filename || 'WageTrack_Report.pdf'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error('Failed to download PDF cleanly, falling back to doc.save:', err)
+    doc.save(filename || 'WageTrack_Report.pdf')
+  }
 }
